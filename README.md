@@ -1,8 +1,6 @@
 # sap-indx-decoder
 
 [![Test](https://github.com/Jack-Liang/sap-indx-decoder/actions/workflows/test.yml/badge.svg)](https://github.com/Jack-Liang/sap-indx-decoder/actions/workflows/test.yml)
-[![PyPI](https://img.shields.io/pypi/v/sap-indx-decoder)](https://pypi.org/project/sap-indx-decoder/)
-[![Python](https://img.shields.io/pypi/pyversions/sap-indx-decoder)](https://pypi.org/project/sap-indx-decoder/)
 
 Decode SAP data clusters — the binary blobs inside `INDX`, `STXL`, and every
 other INDX-style cluster table — **without an SAP system**.
@@ -55,15 +53,27 @@ The full reverse-engineered container/LZH/marker-stream specification lives in
 
 ## Installation
 
-Wheels are built by CI for Linux (x86_64/aarch64), macOS (arm64) and Windows
-once a `v*` tag is pushed. Building from source requires a Rust toolchain
-(`cargo`) because of the native extension; without one you can still run the
-pure-Python fallback by copying `sap_indx_decoder/` (without `_native`).
+No PyPI release — clone and run. The package has **zero required
+dependencies**: everything except database access is pure stdlib, and the
+LZH decompressor transparently falls back to pure Python (byte-for-byte
+identical output, ~60× slower) when the native extension is absent.
 
 ```bash
-pip install sap-indx-decoder[hana]     # + hdbcli for database access
-pip install sap-indx-decoder[parquet]  # + pyarrow for parquet export
-pip install sap-indx-decoder[dev]      # + pytest
+git clone https://github.com/Jack-Liang/sap-indx-decoder
+cd sap-indx-decoder
+python3 -m sap_indx_decoder parse-file examples/TN_QUEUE_ID.bin   # works as-is
+python3 -m sap_indx_decoder serve --offline-dir examples          # web preview
+
+# database access (HANA):
+pip install hdbcli
+
+# optional: native speed + console scripts (requires a Rust toolchain)
+pip install -e .                # maturin compiles the Rust LZH decompressor
+indx --version                  # 'indx' / 'sap-indx-decoder' commands appear
+
+# optional extras
+pip install -e ".[parquet]"     # pyarrow for parquet export
+pip install -e ".[dev]"         # pytest
 ```
 
 ## Usage

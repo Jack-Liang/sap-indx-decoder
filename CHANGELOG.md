@@ -17,6 +17,8 @@
   installed `sap-indx-decoder` console script.
 
 ### Changed
+- README: clone-and-run is the documented install path (no PyPI release is
+  planned); PyPI badges removed.
 - Build artifacts (`native/target/`, `sap_indx_decoder/_native.abi3.so`) are no
   longer tracked in git; wheels are built per-platform by CI.
 
