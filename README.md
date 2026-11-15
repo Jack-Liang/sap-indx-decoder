@@ -89,8 +89,8 @@ python3 -m sap_indx_decoder serve --offline-dir examples    # offline mode
 python3 -m sap_indx_decoder bench --file big_cluster.bin    # decompression throughput
 ```
 
-Installed via pip? Use the console script: `sap-indx-decoder parse ...` —
-same commands.
+Installed via pip? Use the console script: `indx parse ...` (short alias) or
+`sap-indx-decoder parse ...` — same commands.
 
 ## Verification
 

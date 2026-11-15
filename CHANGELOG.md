@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- `indx` short console-script alias (same as `sap-indx-decoder`).
+
 ### Removed
 - `indx_tool.py` compatibility shim — use `python3 -m sap_indx_decoder` or the
   installed `sap-indx-decoder` console script.
