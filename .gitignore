@@ -6,3 +6,4 @@ dist/
 build/
 .venv/
 *.bin.tmp
+.DS_Store
