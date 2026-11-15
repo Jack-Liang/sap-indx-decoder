@@ -248,9 +248,11 @@ fn inflate_lzh_impl(data: &[u8], expect: usize) -> PyResult<Vec<u8>> {
 }
 
 /// 解压 SAP LZH 位流(从 data[24:] 开始),输出长度必须等于 expect。
+/// 解压期间释放 GIL,多线程批量取簇时解压可并行。
 #[pyfunction]
-fn decompress_lzh(data: &[u8], expect: usize) -> PyResult<Vec<u8>> {
-    inflate_lzh_impl(data, expect)
+fn decompress_lzh(py: Python<'_>, data: &[u8], expect: usize) -> PyResult<Vec<u8>> {
+    let owned = data.to_vec();
+    py.allow_threads(|| inflate_lzh_impl(&owned, expect))
 }
 
 #[pymodule]

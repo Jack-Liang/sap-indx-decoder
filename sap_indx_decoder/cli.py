@@ -3,6 +3,9 @@ import argparse
 import json
 import os
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import time
 
 from . import ToolError, __version__, parse_blob
@@ -244,17 +247,69 @@ def cmd_parse_file(args):
     _print_parsed("(file)", os.path.basename(args.file), info, comps, covered, named)
 
 
+# ---- 批量并行取簇:每线程一条独立连接(hdbcli 连接非线程安全) ----
+_tl = threading.local()
+
+
+def _worker_conn(args):
+    """取本线程连接;没有则建立并缓存(线程池线程复用,连接随之复用)。"""
+    conn = getattr(_tl, "conn", None)
+    if conn is None:
+        conn = connect(args)
+        _tl.conn = conn
+    return conn
+
+
+def _safe_one(args, schema, table, identity, kv, enrich):
+    """单簇任务:fetch + 解析(+ 可选 DDIC 丰富);错误捕获进结果,不中断批次。"""
+    try:
+        conn = _worker_conn(args)
+        blob = fetch_cluster(conn, schema, table, identity, kv)
+        info, out, comps, covered, named = parse_blob(blob)
+        if enrich:
+            _maybe_enrich(comps, info, conn, getattr(args, "no_ddic", False))
+        comps_json = [component_to_json(c, info["char_size"], info["codepage"])
+                      for c in comps]
+        return dict(label=_label(identity, kv), kv=kv, info=info,
+                    comps=comps_json, covered=covered, named=named)
+    except Exception as e:
+        return dict(label=_label(identity, kv), kv=kv, error=e)
+
+
+@contextmanager
+def _cluster_pool(args, schema, table, identity, targets, workers, enrich=True):
+    """按 targets 顺序产出单簇结果;workers > 1 时线程池并行。
+
+    结果顺序与 targets 一致(executor.map 保序);解析错误以 error 字段出现。
+    """
+    if workers <= 1:
+        yield (_safe_one(args, schema, table, identity, kv, enrich)
+               for kv, _nch, _tot in targets)
+        return
+    ex = ThreadPoolExecutor(max_workers=workers)
+    try:
+        yield ex.map(lambda kv: _safe_one(args, schema, table, identity, kv, enrich),
+                     (kv for kv, _nch, _tot in targets))
+    finally:
+        ex.shutdown(wait=True)
+
+
 def cmd_scan(args):
     schema, table = resolve_table(args, args.table)
     conn = connect(args)
     identity = table_keyinfo(conn, schema, table)
     targets = iter_cluster_ids(conn, schema, table, identity, args.relid, args.limit)
+    conn.close()
     ok = fail = 0
-    for kv, _nch, _tot in targets:
-        label = _label(identity, kv)
-        try:
-            blob = fetch_cluster(conn, schema, table, identity, kv)
-            info, out, comps, covered, named = parse_blob(blob)
+    with _cluster_pool(args, schema, table, identity, targets,
+                       args.workers, enrich=False) as results:
+        for res in results:
+            label = res["label"]
+            if "error" in res:
+                fail += 1
+                print("❌ %-44s %s" % (label, res["error"]))
+                continue
+            info, comps, covered = res["info"], res["comps"], res["covered"]
             if covered >= 95 and comps:
                 ok += 1
                 print("✅ %-44s %7dB→%8dB v%d 组件%3d 覆盖%3d%%" %
@@ -264,10 +319,6 @@ def cmd_scan(args):
                 fail += 1
                 print("❌ %-44s v%d 覆盖%3d%% 组件%d" %
                       (label, info["version"], covered, len(comps)))
-        except Exception as e:
-            fail += 1
-            print("❌ %-44s %s" % (label, e))
-    conn.close()
     print("\n扫描结果: ✅ %d  ❌ %d / %d" % (ok, fail, len(targets)))
 
 
@@ -277,21 +328,18 @@ def cmd_export(args):
     conn = connect(args)
     identity = table_keyinfo(conn, schema, table)
     targets = iter_cluster_ids(conn, schema, table, identity, args.relid, args.limit)
+    conn.close()
+
     if args.format == "sqlite":
         rows = []
-        cs, cp = None, None
-        for kv, _nch, _tot in targets:
-            try:
-                blob = fetch_cluster(conn, schema, table, identity, kv)
-                info, out, comps, covered, named = parse_blob(blob)
-                _maybe_enrich(comps, info, conn, args.no_ddic)
-                comps_json = [component_to_json(c, info["char_size"], info["codepage"])
-                              for c in comps]
-                rows.append((_label(identity, kv), "%s.%s" % (schema, table), kv,
-                             info, comps_json, covered))
-            except Exception as e:
-                print("❌ %s: %s" % (_label(identity, kv), e))
-        conn.close()
+        with _cluster_pool(args, schema, table, identity, targets,
+                           args.workers) as results:
+            for res in results:
+                if "error" in res:
+                    print("❌ %s: %s" % (res["label"], res["error"]))
+                    continue
+                rows.append((res["label"], "%s.%s" % (schema, table), res["kv"],
+                             res["info"], res["comps"], res["covered"]))
         from .export import sqlite_export
         n, ncomp = sqlite_export(os.path.join(args.out, "%s_export.db" % table), rows)
         print("SQLite 导出 %d 簇 / %d 组件 → %s" %
@@ -300,51 +348,42 @@ def cmd_export(args):
     if args.format == "parquet":
         from .export import parquet_export
         written = skipped = 0
-        for kv, _nch, _tot in targets:
-            try:
-                blob = fetch_cluster(conn, schema, table, identity, kv)
-                info, out, comps, covered, named = parse_blob(blob)
-                _maybe_enrich(comps, info, conn, args.no_ddic)
-                comps_json = [component_to_json(c, info["char_size"], info["codepage"])
-                              for c in comps]
-                w, s = parquet_export(args.out, _label(identity, kv), comps_json)
+        with _cluster_pool(args, schema, table, identity, targets,
+                           args.workers) as results:
+            for res in results:
+                if "error" in res:
+                    if isinstance(res["error"], RuntimeError):
+                        print("错误: %s" % res["error"], file=sys.stderr)
+                        sys.exit(1)
+                    print("❌ %s: %s" % (res["label"], res["error"]))
+                    continue
+                w, s = parquet_export(args.out, res["label"], res["comps"])
                 written += w
                 skipped += s
-            except RuntimeError as e:
-                conn.close()
-                print("错误: %s" % e, file=sys.stderr)
-                sys.exit(1)
-            except Exception as e:
-                print("❌ %s: %s" % (_label(identity, kv), e))
-        conn.close()
         print("Parquet 导出 %d 个组件 → %s (无类型化数据跳过 %d)" %
               (written, args.out, skipped))
         return
 
     # JSON:每簇一个文件(原始行为)
     ok = fail = 0
-    for kv, _nch, _tot in targets:
-        try:
-            blob = fetch_cluster(conn, schema, table, identity, kv)
-            info, out, comps, covered, named = parse_blob(blob)
-            _maybe_enrich(comps, info, conn, args.no_ddic)
+    with _cluster_pool(args, schema, table, identity, targets,
+                       args.workers) as results:
+        for res in results:
+            if "error" in res:
+                fail += 1
+                print("❌ %s: %s" % (res["label"], res["error"]))
+                continue
             safe = "".join(c if c.isalnum() or c in "-_" else "_"
-                           for c in _label(identity, kv))[:80]
+                           for c in res["label"])[:80]
             path = os.path.join(args.out, safe + ".json")
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(dict(cluster=dict(keys=kv,
+                json.dump(dict(cluster=dict(keys=res["kv"],
                                             table="%s.%s" % (schema, table)),
-                               container=info, coverage_pct=covered,
-                               components_named=named,
-                               components=[component_to_json(c, info["char_size"],
-                                                             info["codepage"])
-                                           for c in comps]),
+                               container=res["info"], coverage_pct=res["covered"],
+                               components_named=res["named"],
+                               components=res["comps"]),
                           f, ensure_ascii=False, indent=1)
             ok += 1
-        except Exception as e:
-            fail += 1
-            print("❌ %s: %s" % (_label(identity, kv), e))
-    conn.close()
     print("导出 %d 个簇到 %s (失败 %d)" % (ok, args.out, fail))
 
 
@@ -444,6 +483,8 @@ def main():
     p.add_argument("table")
     p.add_argument("--relid")
     p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--workers", type=int, default=4,
+                   help="并发取簇线程数(默认 4;1=串行)")
     p.set_defaults(fn=cmd_scan)
 
     p = sub.add_parser("export", help="批量解析导出")
@@ -452,6 +493,8 @@ def main():
     p.add_argument("--limit", type=int, default=100)
     p.add_argument("--format", choices=("json", "sqlite", "parquet"), default="json")
     p.add_argument("--no-ddic", action="store_true", help="禁用 DD02L/DD03L 类型化")
+    p.add_argument("--workers", type=int, default=4,
+                   help="并发取簇线程数(默认 4;1=串行)")
     p.add_argument("-o", "--out", required=True)
     p.set_defaults(fn=cmd_export)
 

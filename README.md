@@ -94,9 +94,9 @@ indx dump STXL -k ... -o cluster.bin --with-ddic
 indx parse-file cluster.bin
 indx parse-file cluster.bin --json
 
-# batch
-indx scan INDX --limit 100
-indx export INDX --relid TN --format sqlite -o out_dir
+# batch (--workers: parallel cluster fetching, default 4; 1 = serial)
+indx scan INDX --limit 100 --workers 8
+indx export INDX --relid TN --format sqlite -o out_dir --workers 8
 indx export STXL --relid TX --format parquet -o out_dir
 
 # interactive

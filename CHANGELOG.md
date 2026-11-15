@@ -4,6 +4,10 @@
 
 ### Added
 - `indx` short console-script alias (same as `sap-indx-decoder`).
+- `scan`/`export --workers N` (default 4): thread-pool cluster fetching with
+  per-thread connections — O(N × RTT) on remote systems becomes O(N × RTT / N).
+  The native LZH decompressor now releases the GIL, so parallel decompression
+  scales; output order and failure reporting are unchanged.
 - `test.yml` CI workflow: pytest matrix (3.9–3.13, macOS/Windows) on push/PR,
   plus a native build job running the Rust↔Python parity tests for real.
 - `serve --port` accepted as alias of `--http-port`.
