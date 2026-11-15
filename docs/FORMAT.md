@@ -8,6 +8,8 @@ repository.
 
 Audience: anyone who ever looked at an `INDX`, `STXL`, or custom INDX-type
 table in SE16/DBeaver and wondered what the `CLUSTD` hex blob actually is.
+A companion article walking through the discovery process (Chinese) is at
+<https://jack-liang.com/blog/sap-indx-data-cluster-decoder/>.
 
 ## 1. Cluster tables
 

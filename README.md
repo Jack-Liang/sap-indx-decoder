@@ -8,6 +8,9 @@ other INDX-style cluster table — **without an SAP system**.
 self-describing serialization of your data. SE16 shows you the hex; this tool
 shows you the data.
 
+> **📖 The full reverse-engineering story** (in Chinese):
+> [逆向 SAP 数据簇格式:不登录 SAP 也能读懂 INDX 表里的二进制](https://jack-liang.com/blog/sap-indx-data-cluster-decoder/)
+
 ```
 $ python3 indx_tool.py parse INDX TN QUEUE_ID
 簇 'TN'/TN/QUEUE_ID  容器 v6 代码页 1100  162→769 B (LZH)  组件 1(有名 1)  覆盖 99%
