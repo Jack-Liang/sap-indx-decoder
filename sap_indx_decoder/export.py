@@ -3,7 +3,23 @@ import json
 import os
 import sqlite3
 
-__all__ = ["sqlite_export", "parquet_export"]
+__all__ = ["sqlite_export", "parquet_export", "dedupe_path"]
+
+
+def dedupe_path(path, identity=None, kv=None):
+    """目标已存在时追加身份键值后缀。
+
+    label 略去 MANDT 等键列,双客户端同名簇(如 VM_BW_STARTDDIC 的 000/001)
+    会撞文件名静默覆盖;后缀取自数据本身,与写入顺序无关,结果可复现。
+    """
+    if not os.path.exists(path):
+        return path
+    root, ext = os.path.splitext(path)
+    if identity and kv:
+        tail = "_".join(str(kv.get(c)) for c in identity)
+        tail = "".join(ch if ch.isalnum() else "_" for ch in tail)[:50]
+        return "%s_%s%s" % (root, tail, ext)
+    return "%s_dup%s" % (root, ext)
 
 
 def sqlite_export(path, rows):
@@ -52,7 +68,7 @@ def component_payload(comp, csize, cp):
     return component_to_json(comp, csize, cp)
 
 
-def parquet_export(out_dir, label, comps):
+def parquet_export(out_dir, label, comps, identity=None, kv=None):
     """把一个簇的类型化组件各写成一个 .parquet;返回 (写出数, 跳过数)。
 
     comps 为 component_to_json 转换后的 JSON dict 列表(含 typed_rows)。
@@ -71,7 +87,9 @@ def parquet_export(out_dir, label, comps):
             continue
         table = pa.Table.from_pylist(comp["typed_rows"])
         name = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in comp["name"])[:40]
-        pq.write_table(table, os.path.join(out_dir, f"{safe}__{i:02d}_{name}.parquet"))
+        path = dedupe_path(os.path.join(out_dir, f"{safe}__{i:02d}_{name}.parquet"),
+                           identity, kv)
+        pq.write_table(table, path)
         written += 1
     return written, skipped
 

@@ -357,7 +357,8 @@ def cmd_export(args):
                         sys.exit(1)
                     print("❌ %s: %s" % (res["label"], res["error"]))
                     continue
-                w, s = parquet_export(args.out, res["label"], res["comps"])
+                w, s = parquet_export(args.out, res["label"], res["comps"],
+                                      identity, res["kv"])
                 written += w
                 skipped += s
         print("Parquet 导出 %d 个组件 → %s (无类型化数据跳过 %d)" %
@@ -375,7 +376,9 @@ def cmd_export(args):
                 continue
             safe = "".join(c if c.isalnum() or c in "-_" else "_"
                            for c in res["label"])[:80]
-            path = os.path.join(args.out, safe + ".json")
+            from .export import dedupe_path
+            path = dedupe_path(os.path.join(args.out, safe + ".json"),
+                               identity, res["kv"])
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(dict(cluster=dict(keys=res["kv"],
                                             table="%s.%s" % (schema, table)),
