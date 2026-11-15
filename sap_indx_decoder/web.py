@@ -1,4 +1,4 @@
-"""本地 Web 预览(`indx_tool.py serve`)。
+"""本地 Web 预览(`sap-indx-decoder serve`)。
 
 两种模式:
   连库        --host/--port/--user/--password(默认),浏览任意簇表

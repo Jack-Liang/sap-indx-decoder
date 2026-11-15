@@ -7,7 +7,7 @@ the reference material survives independent of the upstream repository.
 
 ## Why vendored
 
-`indx_tool.py` embeds a Python port of this project's `stxl_decode.py` LZH
+`sap_indx_decoder/lzh.py` embeds a Python port of this project's `stxl_decode.py` LZH
 decompression routine (the project itself is an executable Python mirror of the
 author's SQLScript AMDP decoder for SAPscript long texts in `STXL-CLUSTD`).
 The original is kept here verbatim — including the ABAP/CDS sources of the
@@ -24,7 +24,7 @@ an independently useful executable specification of the container format.
 | `imgs/` | illustrations from the original README |
 | `LICENSE` | MIT, Copyright (c) 2026 Andrey — applies to everything in this directory |
 
-All modifications to files outside this directory (the `indx_tool.py` port)
+All modifications to files outside this directory (the `sap_indx_decoder/lzh.py` port)
 are covered by the repository's own LICENSE; everything inside this directory
 remains under the upstream MIT license, verbatim.
 

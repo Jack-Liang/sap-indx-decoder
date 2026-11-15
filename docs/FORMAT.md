@@ -3,8 +3,8 @@
 How `EXPORT ... TO DATABASE` stores ABAP objects inside INDX-style cluster
 tables, as stored by an ABAP Platform system on SAP HANA. Reverse-engineered
 byte by byte; everything below was verified against live data (see
-[Verification](#verification)). Companion tool: `indx_tool.py` in this
-repository.
+[Verification](#verification)). Companion tool: the `sap_indx_decoder`
+package in this repository.
 
 Audience: anyone who ever looked at an `INDX`, `STXL`, or custom INDX-type
 table in SE16/DBeaver and wondered what the `CLUSTD` hex blob actually is.
@@ -30,7 +30,7 @@ concatenated in `SRTF2` order after trimming each `CLUSTD` to its `CLUSTR`
 length. The last chunk may carry trailing garbage from earlier, larger writes.
 
 Empirical rule: **every column physically before `SRTF2` is part of the cluster
-key**; everything after it is payload metadata. That is how `indx_tool.py`
+key**; everything after it is payload metadata. That is how `sap_indx_decoder`
 derives the key automatically for both INDX and STXL layouts.
 
 ## 2. Container header (versions 3–6)
@@ -135,7 +135,7 @@ of code page.
 
 ## 5. Anchored parsing (implementation strategy)
 
-Not every header byte is decoded, so `indx_tool.py` uses anchoring instead of
+Not every header byte is decoded, so `sap_indx_decoder` uses anchoring instead of
 a full state machine:
 
 1. Scan from a class byte for the first marker in `BB/AB/AD/BC`; the printable

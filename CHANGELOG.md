@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+- `indx_tool.py` compatibility shim — use `python3 -m sap_indx_decoder` or the
+  installed `sap-indx-decoder` console script.
+
+### Changed
+- Build artifacts (`native/target/`, `sap_indx_decoder/_native.abi3.so`) are no
+  longer tracked in git; wheels are built per-platform by CI.
+
 ## 0.2.0 — 2026-11-15
 
 ### Added

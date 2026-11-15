@@ -90,8 +90,7 @@ python3 -m sap_indx_decoder bench --file big_cluster.bin    # decompression thro
 ```
 
 Installed via pip? Use the console script: `sap-indx-decoder parse ...` —
-same commands. The root-level `python3 indx_tool.py ...` still works and is
-kept for compatibility with existing docs/blog links.
+same commands.
 
 ## Verification
 

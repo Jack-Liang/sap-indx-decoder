@@ -12,7 +12,7 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
-The LZH decompression routine in indx_tool.py is a Python port of the MIT-
+The LZH decompression routine in sap_indx_decoder/lzh.py is a Python port of the MIT-
 licensed reference implementation from https://github.com/aamelin1/sap-long-texts
 (Copyright (c) 2026 Andrey).
 

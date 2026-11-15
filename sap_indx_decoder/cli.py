@@ -1,4 +1,4 @@
-"""命令行入口(indx_tool 的实现主体)。"""
+"""命令行入口(`sap-indx-decoder` 命令 / `python -m sap_indx_decoder`)。"""
 import argparse
 import json
 import os
