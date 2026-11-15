@@ -6,8 +6,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from indx_tool import (ToolError, decompress_container, decode_row,
-                       parse_stream, _parse_blob)
+from sap_indx_decoder import ToolError, decompress_container, decode_row, parse_stream
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EX = os.path.join(HERE, "..", "examples")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sap-indx-decoder"
-version = "0.1.0"
+version = "0.2.0"
 description = "Decode SAP data clusters (INDX/STXL cluster tables, EXPORT TO DATABASE blobs) without an SAP system"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -25,7 +25,7 @@ hana = ["hdbcli"]
 dev = ["pytest"]
 
 [project.scripts]
-sap-indx-decoder = "indx_tool:main"
+sap-indx-decoder = "sap_indx_decoder.cli:main"
 
-[tool.setuptools]
-py-modules = ["indx_tool"]
+[tool.setuptools.packages.find]
+include = ["sap_indx_decoder*"]
