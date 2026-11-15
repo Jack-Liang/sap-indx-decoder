@@ -14,7 +14,7 @@ shows you the data — **typed, column-aligned, and searchable**.
 > [逆向 SAP 数据簇格式:不登录 SAP 也能读懂 INDX 表里的二进制](https://jack-liang.com/blog/sap-indx-data-cluster-decoder/)
 
 ```
-$ python3 -m sap_indx_decoder parse STXL -k MANDT=000 -k RELID=TX \
+$ indx parse STXL -k MANDT=000 -k RELID=TX \
     -k TDOBJECT=TEXT -k TDNAME=RHTEXT01 -k TDID=ST -k TDSPRAS=D
 簇 'TX'/TX/TDOBJECT=TEXT/TDNAME=RHTEXT01/TDID=ST  容器 v5 代码页 1100  72→172 B (LZH)
   [表] TLINE                            字段[0:2 0:132] 1 行  [DDIC 类型化]
@@ -79,32 +79,31 @@ pip install -e ".[dev]"         # pytest
 ## Usage
 
 ```bash
+# `indx` = installed via `pip install -e .` (see Installation).
+# Without installing, replace it with `python3 -m sap_indx_decoder` everywhere.
 # against a database (env vars: HANA_HOST, HANA_PORT, HANA_USER, HANA_PASSWORD)
-python3 -m sap_indx_decoder tables --schema SAPA4H
-python3 -m sap_indx_decoder stats INDX
-python3 -m sap_indx_decoder parse INDX TN QUEUE_ID
-python3 -m sap_indx_decoder parse STXL -k MANDT=000 -k RELID=TX \
+indx tables --schema SAPA4H
+indx stats INDX
+indx parse INDX TN QUEUE_ID
+indx parse STXL -k MANDT=000 -k RELID=TX \
     -k TDOBJECT=TEXT -k TDNAME=RHTEXT01 -k TDID=ST -k TDSPRAS=D
-python3 -m sap_indx_decoder parse INDX GC TRPT --json      # typed rows in JSON
+indx parse INDX GC TRPT --json      # typed rows in JSON
 
 # offline dumps (+ DDIC sidecar so parse-file stays typed)
-python3 -m sap_indx_decoder dump STXL -k ... -o cluster.bin --with-ddic
-python3 -m sap_indx_decoder parse-file cluster.bin
-python3 -m sap_indx_decoder parse-file cluster.bin --json
+indx dump STXL -k ... -o cluster.bin --with-ddic
+indx parse-file cluster.bin
+indx parse-file cluster.bin --json
 
 # batch
-python3 -m sap_indx_decoder scan INDX --limit 100
-python3 -m sap_indx_decoder export INDX --relid TN --format sqlite -o out_dir
-python3 -m sap_indx_decoder export STXL --relid TX --format parquet -o out_dir
+indx scan INDX --limit 100
+indx export INDX --relid TN --format sqlite -o out_dir
+indx export STXL --relid TX --format parquet -o out_dir
 
 # interactive
-python3 -m sap_indx_decoder serve --open                    # db mode
-python3 -m sap_indx_decoder serve --offline-dir examples    # offline mode
-python3 -m sap_indx_decoder bench --file big_cluster.bin    # decompression throughput
+indx serve --open                    # db mode
+indx serve --offline-dir examples    # offline mode
+indx bench --file big_cluster.bin    # decompression throughput
 ```
-
-Installed via pip? Use the console script: `indx parse ...` (short alias) or
-`sap-indx-decoder parse ...` — same commands.
 
 ## Verification
 
