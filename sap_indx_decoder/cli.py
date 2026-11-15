@@ -105,7 +105,30 @@ def cmd_dump(args):
     schema, table = resolve_table(args, args.table)
     conn = connect(args)
     identity = table_keyinfo(conn, schema, table)
-    blob = fetch_cluster(conn, schema, table, identity, _kv_from_args(args, identity))
+    kv = _kv_from_args(args, identity)
+    blob = fetch_cluster(conn, schema, table, identity, kv)
+    if args.with_ddic and args.out:
+        with open(args.out, "wb") as f:
+            f.write(blob)
+        info, out, comps, covered, named = parse_blob(blob)
+        from .ddic import DDIC
+        ddic = DDIC(conn)
+        defs = {}
+        for c in comps:
+            if c["kind"] != "value" and len(c["name"]) >= 3:
+                f = ddic.get(c["name"])
+                if f:
+                    defs[c["name"]] = f
+        conn.close()
+        if defs:
+            sidecar = args.out + ".ddic.json"
+            with open(sidecar, "w", encoding="utf-8") as f:
+                json.dump(defs, f, ensure_ascii=False)
+            print("已导出 %s (%d 字节) + DDIC 侧车 %s (%d 个结构)" %
+                  (args.out, len(blob), sidecar, len(defs)))
+        else:
+            print("已导出 %s (%d 字节) (无 DDIC 命中,未生成侧车)" % (args.out, len(blob)))
+        return
     conn.close()
     if args.out:
         with open(args.out, "wb") as f:
@@ -115,14 +138,32 @@ def cmd_dump(args):
         print(blob.hex())
 
 
+def _load_sidecar(path):
+    """<file>.ddic.json 侧车 → DDIC 预载数据(不存在返回 None)。"""
+    for cand in (path + ".ddic.json", os.path.splitext(path)[0] + ".ddic.json"):
+        if os.path.exists(cand):
+            with open(cand, encoding="utf-8") as f:
+                return json.load(f)
+    return None
+
+
+def _maybe_enrich(comps, info, conn, no_ddic):
+    """在线模式下用 DD02L/DD03L 丰富组件(类型化行 + 列名)。"""
+    if no_ddic or conn is None:
+        return
+    from .ddic import DDIC, enrich_components
+    enrich_components(comps, info, DDIC(conn))
+
+
 def cmd_parse(args):
     schema, table = resolve_table(args, args.table)
     conn = connect(args)
     identity = table_keyinfo(conn, schema, table)
     kv = _kv_from_args(args, identity)
     blob = fetch_cluster(conn, schema, table, identity, kv)
-    conn.close()
     info, out, comps, covered, named = parse_blob(blob)
+    _maybe_enrich(comps, info, conn, args.no_ddic)
+    conn.close()
     if args.json:
         print(json.dumps(dict(
             cluster=dict(keys=kv, table="%s.%s" % (schema, table)),
@@ -132,6 +173,25 @@ def cmd_parse(args):
         return
     _print_parsed(kv.get("RELID", "(kv)"), _label(identity, kv),
                   info, comps, covered, named)
+
+
+def _print_typed_table(c):
+    cols = c["columns"]
+    names = [col["name"] for col in cols]
+    rows = c["typed_rows"]
+    widths = []
+    for i, n in enumerate(names):
+        w = len(n)
+        for r in rows[:20]:
+            w = max(w, len(str(r.get(n))[:24]))
+        widths.append(min(w, 24))
+    head = "  ".join(n[:w].ljust(w) for n, w in zip(names, widths))
+    print("      " + head[:160])
+    for r in rows[:3]:
+        line = "  ".join(str(r.get(n))[:w].ljust(w) for n, w in zip(names, widths))
+        print("      " + line[:160])
+    if len(rows) > 3:
+        print("      ... 共 %d 行" % len(rows))
 
 
 def _print_parsed(relid, srtfd, info, comps, covered, named):
@@ -146,10 +206,14 @@ def _print_parsed(relid, srtfd, info, comps, covered, named):
             flag = "" if bad == 0 else "  [%d 非打印]" % bad
             print("  [单值] %-32s -> '%s'%s" % (c["name"][:32], txt[:70], flag))
         else:
-            fl = " ".join("%s:%s" % (t, l) for t, l in c["fields"][:8])
-            print("  [%s] %-32s 字段[%s] %d 行" %
-                  ("表" if c["kind"] == "table" else "结构", c["name"][:32], fl, len(c["rows"])))
-            if c["kind"] != "value":
+            fl = " ".join("%s:%s" % (f[-2], f[-1]) for f in c["fields"][:8])
+            tag = "表" if c["kind"] == "table" else "结构"
+            ddic_tag = "  [DDIC 类型化]" if c.get("typed") else ""
+            print("  [%s] %-32s 字段[%s] %d 行%s" %
+                  (tag, c["name"][:32], fl, len(c["rows"]), ddic_tag))
+            if c.get("typed"):
+                _print_typed_table(c)
+            else:
                 for r in c["rows"][:3]:
                     txt, bad = decode_row(r, cs, info["codepage"])
                     flag = "" if bad == 0 else "  [%d 非打印]" % bad
@@ -166,6 +230,10 @@ def cmd_parse_file(args):
     except (UnicodeDecodeError, ValueError):
         pass
     info, out, comps, covered, named = parse_blob(raw)
+    preload = _load_sidecar(args.file)
+    if preload:
+        from .ddic import DDIC, enrich_components
+        enrich_components(comps, info, DDIC(None, preload))
     if args.json:
         print(json.dumps(dict(
             file=args.file, container=info, coverage_pct=covered,
@@ -214,6 +282,7 @@ def cmd_export(args):
         try:
             blob = fetch_cluster(conn, schema, table, identity, kv)
             info, out, comps, covered, named = parse_blob(blob)
+            _maybe_enrich(comps, info, conn, args.no_ddic)
             safe = "".join(c if c.isalnum() or c in "-_" else "_"
                            for c in _label(identity, kv))[:80]
             path = os.path.join(args.out, safe + ".json")
@@ -302,6 +371,7 @@ def main():
     p.add_argument("srtfd", nargs="?", help="标准簇表的 SRTFD")
     p.add_argument("-k", "--kv", action="append",
                    help="簇键列=值,可重复;非标准键结构的簇表需用 -k 提供全部键列")
+    p.add_argument("--no-ddic", action="store_true", help="禁用 DD02L/DD03L 类型化")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_parse)
 
@@ -315,6 +385,8 @@ def main():
     p.add_argument("relid", nargs="?")
     p.add_argument("srtfd", nargs="?")
     p.add_argument("-k", "--kv", action="append", help="簇键列=值,可重复")
+    p.add_argument("--with-ddic", action="store_true",
+                   help="同时导出 .ddic.json 侧车(簇内结构的 DD03L 定义)")
     p.add_argument("-o", "--out")
     p.set_defaults(fn=cmd_dump)
 
@@ -328,6 +400,7 @@ def main():
     p.add_argument("table")
     p.add_argument("--relid")
     p.add_argument("--limit", type=int, default=100)
+    p.add_argument("--no-ddic", action="store_true", help="禁用 DD02L/DD03L 类型化")
     p.add_argument("-o", "--out", required=True)
     p.set_defaults(fn=cmd_export)
 

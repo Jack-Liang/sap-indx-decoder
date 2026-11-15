@@ -90,4 +90,4 @@ def test_row_width_is_self_consistent():
     info, out, comps, _ = parse_fixture("TN_QUEUE_ID.bin")
     for c in comps:
         if c["kind"] in ("struct", "table") and c["fields"][0][0] != "v6":
-            assert len(c["rows"][0]) == sum(l for _, l in c["fields"])
+            assert len(c["rows"][0]) == sum(f[-1] for f in c["fields"])

@@ -71,9 +71,9 @@ def parse_group(out, q, ver):
 
 def read_name(out, s, e, csize):
     if csize == 1:
-        return bytes(out[s:e]).decode("latin1").rstrip()
+        return bytes(out[s:e]).decode("latin1").strip()
     return "".join(chr(out[i] + out[i + 1] * 256)
-                   for i in range(s, e, 2)).rstrip()
+                   for i in range(s, e, 2)).strip()
 
 
 def try_component(out, p, ver, csize=1):
@@ -86,11 +86,14 @@ def try_component(out, p, ver, csize=1):
         if 1 <= namelen <= 60:
             tname = read_name(out, p + 32, p + 32 + namelen * csize, csize)
             qq = p + 32 + namelen * csize
-            rowsum, rows, bound = 0, None, min(qq + 8192, n)
+            fields, rows, bound = [], None, min(qq + 8192, n)
+            rowsum = 0
             while qq < bound:
                 op = out[qq]
                 if op in (0xAA, 0xAF):
-                    rowsum += u32be(out, qq + 3)
+                    ln = u32be(out, qq + 3)
+                    rowsum += ln
+                    fields.append((op, out[qq + 1], ln))   # (操作码, type, len字节)
                     qq += 7
                 elif op in (0xAB, 0xAD):
                     qq += 1
@@ -136,7 +139,8 @@ def try_component(out, p, ver, csize=1):
                 else:
                     return None
             if rows is not None and (qq >= n or out[qq] in CLASS_BYTES + (0x04, 0x00)):
-                return dict(kind="table", name=tname, fields=[("v6", rowsum)],
+                return dict(kind="table", name=tname,
+                            fields=fields or [("v6", rowsum)],
                             rows=rows, end=qq)
 
     q = p + 1
@@ -227,7 +231,7 @@ def decode_row(row, csize, cp="1100"):
 
 
 def component_to_json(c, csize, cp):
-    """组件 → JSON 可序列化 dict(文本视图;类型化解码见 ddic.py)。"""
+    """组件 → JSON 可序列化 dict。含文本视图;若经 DDIC 丰富化,附加类型化数据。"""
     d = dict(kind=c["kind"], name=c["name"])
     if c["kind"] == "value":
         txt, bad = decode_row(c["value"], csize, cp)
@@ -235,10 +239,16 @@ def component_to_json(c, csize, cp):
         d["value_bytes"] = len(c["value"])
         d["non_printable"] = bad
     else:
-        d["fields"] = [[t, l] for t, l in c["fields"]]
-        d["row_bytes"] = sum(l for _, l in c["fields"]) if c["kind"] == "struct" else None
+        d["fields"] = [list(f) for f in c["fields"]]
+        d["row_bytes"] = sum(f[-1] for f in c["fields"]) if c["kind"] == "struct" else None
         d["rows"] = []
         for r in c["rows"]:
             txt, bad = decode_row(r, csize, cp)
             d["rows"].append(dict(text=txt, bytes=len(r), non_printable=bad))
+    if c.get("typed"):
+        d["ddic"] = True
+        d["columns"] = c["columns"]
+        d["typed_rows"] = c["typed_rows"]
+    else:
+        d["ddic"] = False
     return d
