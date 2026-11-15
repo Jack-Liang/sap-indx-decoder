@@ -98,7 +98,10 @@ every parse reports the share of stream bytes it could explain.
 * LZH decompression: Python port of the SQLScript reference decoder from
   [aamelin1/sap-long-texts](https://github.com/aamelin1/sap-long-texts) (MIT),
   which references the SAP MaxDB sources — see
-  [the accompanying blog post](https://community.sap.com/t5/technology-blog-posts-by-members/beyond-read-text-decoding-sapscript-long-texts-stxl-with-sqlscript-in-cds/ba-p/14468331)
+  [the accompanying blog post](https://community.sap.com/t5/technology-blog-posts-by-members/beyond-read-text-decoding-sapscript-long-texts-stxl-with-sqlscript-in-cds/ba-p/14468331).
+  A verbatim copy of the upstream repository is vendored under
+  [`third_party/sap-long-texts/`](third_party/sap-long-texts/VENDORED.md) so
+  the reference survives upstream changes
 * The generic marker-stream grammar for non-STXL clusters (component classes,
   `AF` descriptors, empty tables, UTF-16, v6 row sections) was
   reverse-engineered for this project — see docs/FORMAT.md

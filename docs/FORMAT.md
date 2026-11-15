@@ -65,7 +65,8 @@ deflate, but with different framing: a 2-bit value precedes the first block,
 Huffman codes accumulate MSB-first while the bit reader is LSB-first. The
 reference implementation in this repo (`inflate_lzh`) is a Python port of the
 SQLScript decoder published by [@aamelin1/sap-long-texts](https://github.com/aamelin1/sap-long-texts)
-(MIT), which in turn references the SAP MaxDB sources (`vpa108csulzh.cpp`).
+(MIT; vendored verbatim under [`third_party/sap-long-texts/`](../third_party/sap-long-texts/VENDORED.md)),
+which in turn references the SAP MaxDB sources (`vpa108csulzh.cpp`).
 The same container/LZH machinery also appears in SAPCAR archives, REPOSRC and
 DIAG traffic.
 
