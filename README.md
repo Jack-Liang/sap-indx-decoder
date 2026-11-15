@@ -6,18 +6,18 @@ other INDX-style cluster table — **without an SAP system**.
 `EXPORT ... TO DATABASE` writes ABAP variables into cluster tables as
 `CLUSTD` blobs: a proprietary container, optionally LZH-compressed, wrapping a
 self-describing serialization of your data. SE16 shows you the hex; this tool
-shows you the data.
+shows you the data — **typed, column-aligned, and searchable**.
 
 > **📖 The full reverse-engineering story** (in Chinese):
 > [逆向 SAP 数据簇格式:不登录 SAP 也能读懂 INDX 表里的二进制](https://jack-liang.com/blog/sap-indx-data-cluster-decoder/)
 
 ```
-$ python3 indx_tool.py parse INDX TN QUEUE_ID
-簇 'TN'/TN/QUEUE_ID  容器 v6 代码页 1100  162→769 B (LZH)  组件 1(有名 1)  覆盖 99%
-  [表] PAT01_TAB                        字段[v6:154] 4 行
-      | SAPKB70202          001EPILOGUE            X
-      | SAPKA70202          002EPILOGUE            X
-      | SAPK-70202INPIBASIS 003EPILOGUE            X
+$ python3 indx_tool.py parse STXL -k MANDT=000 -k RELID=TX \
+    -k TDOBJECT=TEXT -k TDNAME=RHTEXT01 -k TDID=ST -k TDSPRAS=D
+簇 'TX'/TX/TDOBJECT=TEXT/TDNAME=RHTEXT01/TDID=ST  容器 v5 代码页 1100  72→172 B (LZH)
+  [表] TLINE                            字段[0:2 0:132] 1 行  [DDIC 类型化]
+      TDFORMAT  TDLINE
+      *         jdjdjdjdjdjdj
 ```
 
 ## What it does
@@ -26,29 +26,40 @@ $ python3 indx_tool.py parse INDX TN QUEUE_ID
 |---------|-------------|
 | `tables` | discover all cluster tables in a schema |
 | `stats` / `list` | browse clusters by area / key |
-| `parse` | fetch one cluster from the DB, decompress, parse, print |
-| `parse-file` | same, from an offline `.bin`/`.hex` dump |
-| `dump` | export raw cluster bytes |
+| `parse` | fetch one cluster, decompress, parse, print (typed via DDIC) |
+| `parse-file` | same, from an offline `.bin`/`.hex` dump (auto-loads `.ddic.json` sidecar) |
+| `dump` | export raw cluster bytes (`--with-ddic` adds a DDIC sidecar) |
 | `scan` | batch-parse with success-rate report |
-| `export` | batch-export parsed clusters as JSON |
+| `export` | batch-export as `--format json\|sqlite\|parquet` |
+| `serve` | local web preview (db mode or `--offline-dir`) |
+| `bench` | LZH decompression throughput |
 
-Works against any SAP HANA database (via `hdbcli`) — including the
-[ABAP Cloud Developer Trial](https://hub.docker.com/r/sapse/abap-cloud-developer-trial)
-Docker images — and fully offline on exported blobs. Both classic `INDX`
-(`RELID`/`SRTFD` keys) and composite-key cluster tables like `STXL` are
-supported; the key structure is derived from the table definition.
+* Typed decoding: when a component name exists in the ABAP data dictionary
+  (`DD02L`/`DD03L`), rows are decoded into named, typed columns — e.g. `TLINE`
+  → `TDFORMAT`/`TDLINE`, `INT4` fields → real integers (little-endian). Field
+  semantics come from the descriptor stream itself (`0=C 1=D 3=T 6=N 8=I`,
+  confirmed against DD03L); DDIC contributes column names and validation.
+* Local web preview: `serve` runs a zero-dependency UI (stdlib `http.server`)
+  for browsing tables → clusters → typed component tables with a hex toggle.
+  `--offline-dir` points it at dumped `.bin` files — no database needed.
+* Fast: the LZH decompressor ships as a native Rust extension (PyO3, abi3)
+  with a byte-for-byte differential-tested pure-Python fallback — 4.5 MB in
+  ~7 ms (≈680 MB/s, ~60× the pure-Python baseline).
 
 The full reverse-engineered container/LZH/marker-stream specification lives in
 [docs/FORMAT.md](docs/FORMAT.md).
 
 ## Installation
 
-Requires Python 3.9+. `hdbcli` is only needed for database access
-(`parse-file` works without it):
+Wheels are built by CI for Linux (x86_64/aarch64), macOS (arm64) and Windows
+once a `v*` tag is pushed. Building from source requires a Rust toolchain
+(`cargo`) because of the native extension; without one you can still run the
+pure-Python fallback by copying `sap_indx_decoder/` (without `_native`).
 
 ```bash
-pip install hdbcli
-# or: pip install .   (after publishing)
+pip install sap-indx-decoder[hana]     # + hdbcli for database access
+pip install sap-indx-decoder[parquet]  # + pyarrow for parquet export
+pip install sap-indx-decoder[dev]      # + pytest
 ```
 
 ## Usage
@@ -57,21 +68,25 @@ pip install hdbcli
 # against a database (env vars: HANA_HOST, HANA_PORT, HANA_USER, HANA_PASSWORD)
 python3 indx_tool.py tables --schema SAPA4H
 python3 indx_tool.py stats INDX
-python3 indx_tool.py list INDX --relid TN
-python3 indx_tool.py parse INDX TN QUEUE_ID --json
+python3 indx_tool.py parse INDX TN QUEUE_ID
+python3 indx_tool.py parse STXL -k MANDT=000 -k RELID=TX \
+    -k TDOBJECT=TEXT -k TDNAME=RHTEXT01 -k TDID=ST -k TDSPRAS=D
+python3 indx_tool.py parse INDX GC TRPT --json      # typed rows in JSON
 
-# composite-key cluster tables (STXL long texts)
-python3 indx_tool.py parse STXL -k MANDT=000 -k RELID=TX -k TDOBJECT=TEXT \
-    -k TDNAME=RHTEXT01 -k TDID=ST -k TDSPRAS=D
-
-# offline
-python3 indx_tool.py dump INDX GC TRPT -o trpt.bin
-python3 indx_tool.py parse-file trpt.bin
-python3 indx_tool.py parse-file trpt.bin --json    # machine-readable
+# offline dumps (+ DDIC sidecar so parse-file stays typed)
+python3 indx_tool.py dump STXL -k ... -o cluster.bin --with-ddic
+python3 indx_tool.py parse-file cluster.bin
+python3 indx_tool.py parse-file cluster.bin --json
 
 # batch
 python3 indx_tool.py scan INDX --limit 100
-python3 indx_tool.py export INDX --relid TN -o out_dir
+python3 indx_tool.py export INDX --relid TN --format sqlite -o out_dir
+python3 indx_tool.py export STXL --relid TX --format parquet -o out_dir
+
+# interactive
+python3 indx_tool.py serve --open                    # db mode
+python3 indx_tool.py serve --offline-dir examples    # offline mode
+python3 indx_tool.py bench --file big_cluster.bin    # decompression throughput
 ```
 
 ## Verification
@@ -82,19 +97,42 @@ On one ABAP Cloud Developer Trial 2025 system (`SAPA4H.INDX`, 5,568 rows):
   are 8 empty (all-zero) clusters and 2 exotic `nwbc_*` variants —
   ≈98 % of non-empty clusters
 * `STXL` long texts: 12/12, rows decode to the documented `TLINE` layout
-* LZH output always matches the container header's declared uncompressed size
+* LZH output always matches the container header's declared uncompressed size;
+  native and pure-Python decoders are differential-tested byte-for-byte
+  (fixtures + a 60-cluster live corpus)
+* DDIC hit rate on structured components is intentionally best-effort:
+  component names are ABAP variable names and often differ from DDIC names
+  (e.g. `GT_MONITOR_INFO`); hits like `TLINE`/`OJTL`/`MIME` decode typed
 
 The parser self-validates: row width = sum of field descriptor lengths, and
 every parse reports the share of stream bytes it could explain.
+
+## Architecture
+
+```
+sap_indx_decoder/
+├── lzh.py         # LZH inflate: pure Python + native bridge (Rust, optional)
+├── container.py   # 24-byte container header, code page, compression dispatch
+├── marker.py      # anchored marker-stream parser (v3–v6) + text views
+├── typedecode.py  # descriptor type bytes → ABAP values (0=C 1=D 3=T 6=N 8=I)
+├── ddic.py        # DD02L/DD03L lookup + component enrichment
+├── db.py          # hdbcli access, cluster-key inference, fetch/iterate
+├── export.py      # sqlite / parquet writers
+├── web.py         # serve: zero-dependency local preview
+└── cli.py         # argparse front end
+```
 
 ## Limitations
 
 * LZC (`0x10`) compression not implemented (LZH `0x12` is what HANA-based
   systems emit)
-* numeric (non-char) field values are shown as raw bytes, not typed
+* field semantics confirmed for `C/D/T/N/I`; other descriptor type bytes and
+  the `AF` opcode fall back to raw hex
 * component-header hash bytes are not decoded (occasionally cosmetic noise in
   names)
 * containers older than v3 and the `nwbc_uid`/`nwbc_cache_counter` variant
+* `DD03L`-based enrichment skips `.INCLUDE`-expanded fields and variable-length
+  (`STRING`) columns
 
 ## Credits
 

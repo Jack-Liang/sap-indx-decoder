@@ -99,9 +99,24 @@ Between the group markers, each structure field is described by:
 The declared row width equals the **sum of all descriptor lengths** — this is
 the strongest self-consistency check available and the parser verifies it.
 
-Descriptor `type` byte semantics observed so far: `0x00` = char, `0x01`/`0x03`
-= date/time (stored as characters), `0x06`/`0x08` = numeric/binary (values are
-raw bytes, not yet decoded to numbers).
+Descriptor `type` byte semantics (confirmed against `DD02L`/`DD03L` ground
+truth on live clusters — `OJTL` gave `C/D/T`, `TLANINDX` gave `N`, `INDX`
+address-service tables gave `I`):
+
+| type byte | ABAP internal type (DD03L.INTTYPE) | storage width in row |
+|-----------|-------------------------------------|----------------------|
+| `0`       | `C` (CHAR/LANG)                     | `len` bytes = `chars × csize` |
+| `1`       | `D` (DATS)                          | `len` bytes (8 chars, ×csize) |
+| `3`       | `T` (TIMS)                          | `len` bytes (6 chars, ×csize) |
+| `6`       | `N` (NUMC)                          | `len` bytes (chars, ×csize) |
+| `8`       | `I` (INT4)                          | 4 bytes, little-endian signed |
+| other / `AF` opcode | unknown                    | raw hex, not decoded |
+
+Note the width asymmetry: in v5 containers (single-byte code pages) the
+descriptor length is both the byte width and the character count; in v6
+containers with UTF-16 code pages the descriptor length is the **byte** width
+(character count = `len / csize`). Binary `INT4` fields stay 4 bytes regardless
+of code page.
 
 ### 4.2 Groups and rows
 
@@ -148,7 +163,9 @@ schema `SAPA4H`, table `INDX` with 5,568 rows / 24 schemas):
 ## 7. Known gaps
 
 * LZC (`0x10`) decompression — not observed on HANA-based systems
-* numeric field values are shown as raw bytes, not typed to INT4/PACKED/FLOAT
+* field semantics beyond `C/D/T/N/I` (e.g. packed decimals `P`, floats `F`)
+  are decoded only via the DDIC path (`DD03L.INTTYPE`); descriptor-driven
+  values for other type bytes remain raw hex
 * the component-header layout (hash bytes) is not decoded; names may pick up
   printable hash bytes (cosmetic)
 * containers of version < 3 and the `nwbc_*` exotic variant
