@@ -277,6 +277,51 @@ def cmd_export(args):
     conn = connect(args)
     identity = table_keyinfo(conn, schema, table)
     targets = iter_cluster_ids(conn, schema, table, identity, args.relid, args.limit)
+    if args.format == "sqlite":
+        rows = []
+        cs, cp = None, None
+        for kv, _nch, _tot in targets:
+            try:
+                blob = fetch_cluster(conn, schema, table, identity, kv)
+                info, out, comps, covered, named = parse_blob(blob)
+                _maybe_enrich(comps, info, conn, args.no_ddic)
+                comps_json = [component_to_json(c, info["char_size"], info["codepage"])
+                              for c in comps]
+                rows.append((_label(identity, kv), "%s.%s" % (schema, table), kv,
+                             info, comps_json, covered))
+            except Exception as e:
+                print("❌ %s: %s" % (_label(identity, kv), e))
+        conn.close()
+        from .export import sqlite_export
+        n, ncomp = sqlite_export(os.path.join(args.out, "%s_export.db" % table), rows)
+        print("SQLite 导出 %d 簇 / %d 组件 → %s" %
+              (n, ncomp, os.path.join(args.out, "%s_export.db" % table)))
+        return
+    if args.format == "parquet":
+        from .export import parquet_export
+        written = skipped = 0
+        for kv, _nch, _tot in targets:
+            try:
+                blob = fetch_cluster(conn, schema, table, identity, kv)
+                info, out, comps, covered, named = parse_blob(blob)
+                _maybe_enrich(comps, info, conn, args.no_ddic)
+                comps_json = [component_to_json(c, info["char_size"], info["codepage"])
+                              for c in comps]
+                w, s = parquet_export(args.out, _label(identity, kv), comps_json)
+                written += w
+                skipped += s
+            except RuntimeError as e:
+                conn.close()
+                print("错误: %s" % e, file=sys.stderr)
+                sys.exit(1)
+            except Exception as e:
+                print("❌ %s: %s" % (_label(identity, kv), e))
+        conn.close()
+        print("Parquet 导出 %d 个组件 → %s (无类型化数据跳过 %d)" %
+              (written, args.out, skipped))
+        return
+
+    # JSON:每簇一个文件(原始行为)
     ok = fail = 0
     for kv, _nch, _tot in targets:
         try:
@@ -301,6 +346,11 @@ def cmd_export(args):
             print("❌ %s: %s" % (_label(identity, kv), e))
     conn.close()
     print("导出 %d 个簇到 %s (失败 %d)" % (ok, args.out, fail))
+
+
+def cmd_serve(args):
+    from .web import serve
+    serve(args)
 
 
 def cmd_bench(args):
@@ -396,13 +446,23 @@ def main():
     p.add_argument("--limit", type=int, default=50)
     p.set_defaults(fn=cmd_scan)
 
-    p = sub.add_parser("export", help="批量解析导出 JSON")
+    p = sub.add_parser("export", help="批量解析导出")
     p.add_argument("table")
     p.add_argument("--relid")
     p.add_argument("--limit", type=int, default=100)
+    p.add_argument("--format", choices=("json", "sqlite", "parquet"), default="json")
     p.add_argument("--no-ddic", action="store_true", help="禁用 DD02L/DD03L 类型化")
     p.add_argument("-o", "--out", required=True)
     p.set_defaults(fn=cmd_export)
+
+    p = sub.add_parser("serve", help="本地 Web 预览(连库或 --offline-dir)")
+    p.add_argument("--http-bind", default="127.0.0.1", help="Web 监听地址(默认 127.0.0.1)")
+    p.add_argument("--http-port", type=int, default=8765,
+                   help="Web 监听端口(默认 8765,与 HANA 端口无关)")
+    p.add_argument("--open", action="store_true", help="启动后打开浏览器")
+    p.add_argument("--offline-dir", help="离线浏览 dump 目录(.bin + .ddic.json 侧车)")
+    p.add_argument("--schema")
+    p.set_defaults(fn=cmd_serve)
 
     p = sub.add_parser("bench", help="LZH 解压吞吐基准")
     p.add_argument("--file", help="指定单个簇文件;缺省用 examples/")
