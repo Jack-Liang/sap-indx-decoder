@@ -29,6 +29,11 @@ parquet = ["pyarrow"]
 sap-indx-decoder = "sap_indx_decoder.cli:main"
 indx = "sap_indx_decoder.cli:main"  # 短别名
 
+[project.urls]
+Repository = "https://github.com/Jack-Liang/sap-indx-decoder"
+Issues = "https://github.com/Jack-Liang/sap-indx-decoder/issues"
+Changelog = "https://github.com/Jack-Liang/sap-indx-decoder/blob/main/CHANGELOG.md"
+
 [tool.maturin]
 # 混合构建:Rust 原生扩展(sap_indx_decoder._native)+ 纯 Python 包
 manifest-path = "native/Cargo.toml"

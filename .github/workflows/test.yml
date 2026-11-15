@@ -1,0 +1,48 @@
+name: Test
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+jobs:
+    # 纯 Python 路径:无原生扩展,has_native=False,parity 组自动跳过
+    test-pure:
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - { os: ubuntu-latest, python: "3.9" }
+                    - { os: ubuntu-latest, python: "3.13" }
+                    - { os: macos-latest, python: "3.12" }
+                    - { os: windows-latest, python: "3.12" }
+        runs-on: ${{ matrix.os }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: ${{ matrix.python }}
+            - run: pip install pytest
+            - run: python -m pytest tests/ -v
+
+    # 原生扩展路径:构建 .so overlay 进源码包目录,parity 测试真正运行
+    # (tests 把仓库根插到 sys.path[0],site-packages 里的 wheel 会被源码副本遮蔽)
+    test-native:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: native
+            - run: pip install maturin
+            - run: maturin build --release -o dist -m native/Cargo.toml
+            - name: Overlay native extension into source tree
+              run: |
+                  cd dist
+                  unzip -o sap_indx_decoder-*.whl "sap_indx_decoder/_native*" -d "$GITHUB_WORKSPACE"
+                  ls -la "$GITHUB_WORKSPACE/sap_indx_decoder"
+            - run: pip install pytest && python -m pytest tests/ -v

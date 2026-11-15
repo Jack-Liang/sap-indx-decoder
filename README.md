@@ -1,5 +1,9 @@
 # sap-indx-decoder
 
+[![Test](https://github.com/Jack-Liang/sap-indx-decoder/actions/workflows/test.yml/badge.svg)](https://github.com/Jack-Liang/sap-indx-decoder/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/sap-indx-decoder)](https://pypi.org/project/sap-indx-decoder/)
+[![Python](https://img.shields.io/pypi/pyversions/sap-indx-decoder)](https://pypi.org/project/sap-indx-decoder/)
+
 Decode SAP data clusters — the binary blobs inside `INDX`, `STXL`, and every
 other INDX-style cluster table — **without an SAP system**.
 

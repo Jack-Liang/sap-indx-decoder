@@ -457,8 +457,8 @@ def main():
 
     p = sub.add_parser("serve", help="本地 Web 预览(连库或 --offline-dir)")
     p.add_argument("--http-bind", default="127.0.0.1", help="Web 监听地址(默认 127.0.0.1)")
-    p.add_argument("--http-port", type=int, default=8765,
-                   help="Web 监听端口(默认 8765,与 HANA 端口无关)")
+    p.add_argument("--http-port", "--port", dest="http_port", type=int, default=8765,
+                   help="Web 监听端口(默认 8765;--port 为简写,与 HANA 的 --port 无关)")
     p.add_argument("--open", action="store_true", help="启动后打开浏览器")
     p.add_argument("--offline-dir", help="离线浏览 dump 目录(.bin + .ddic.json 侧车)")
     p.add_argument("--schema")

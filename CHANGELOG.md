@@ -4,6 +4,9 @@
 
 ### Added
 - `indx` short console-script alias (same as `sap-indx-decoder`).
+- `test.yml` CI workflow: pytest matrix (3.9–3.13, macOS/Windows) on push/PR,
+  plus a native build job running the Rust↔Python parity tests for real.
+- `serve --port` accepted as alias of `--http-port`.
 
 ### Removed
 - `indx_tool.py` compatibility shim — use `python3 -m sap_indx_decoder` or the
