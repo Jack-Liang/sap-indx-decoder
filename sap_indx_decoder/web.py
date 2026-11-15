@@ -4,7 +4,8 @@
   连库        --host/--port/--user/--password(默认),浏览任意簇表
   --offline-dir DIR  浏览本地 dump 的 .bin 文件(自动加载 .ddic.json 侧车)
 
-零框架依赖:stdlib http.server + 单页内联 HTML/JS。
+零框架依赖:stdlib http.server + 单页内联 HTML/CSS/JS。
+设计令牌采用语义化 CSS 变量,自动跟随系统明暗主题(prefers-color-scheme)。
 默认只绑定 127.0.0.1。
 """
 import json
@@ -15,50 +16,161 @@ from urllib.parse import parse_qs, urlparse
 
 from . import ToolError, __version__, parse_blob
 from .db import (connect, current_schema, fetch_cluster, iter_cluster_ids,
-                 qid, table_keyinfo)
+                 table_keyinfo)
 from .ddic import DDIC, enrich_components
 from .marker import component_to_json
 
 _PAGE = """<!doctype html>
 <html lang="zh"><head><meta charset="utf-8">
-<title>sap-indx-decoder v%(version)s</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>sap-indx-decoder</title>
 <style>
- html,body{background:#fff;color:#111}
- body{font:14px/1.5 -apple-system,'Segoe UI',Roboto,'PingFang SC',sans-serif;margin:0;display:flex;height:100vh}
- #left{width:230px;border-right:1px solid #ddd;overflow:auto;padding:10px}
- #mid{width:340px;border-right:1px solid #ddd;overflow:auto;padding:10px}
- #main{flex:1;overflow:auto;padding:14px}
- h3{margin:8px 0 4px} .item{padding:4px 6px;border-radius:4px;cursor:pointer;word-break:break-all}
- .item:hover{background:#eef}.item.sel{background:#dcecff}
- table{border-collapse:collapse;margin:6px 0}td,th{border:1px solid #ccc;padding:3px 8px;font-size:13px}
- th{background:#f2f2f2;text-align:left}.badge{display:inline-block;background:#e2e8f0;border-radius:8px;padding:1px 8px;margin-left:6px;font-size:12px}
- input{width:calc(100%% - 12px);padding:4px;margin-bottom:6px;background:#fff;color:#111}
- pre{background:#f6f8fa;padding:8px;overflow:auto;font-size:12px}
- .muted{color:#888;font-size:12px}
+/* ---- 设计令牌(语义层,自动明暗) ---- */
+:root{
+  --bg:#f2f4f7; --panel:#ffffff; --panel-2:#f7f9fb; --border:#e2e6eb;
+  --text:#1a2129; --text-2:#55616d; --muted:#8b95a1;
+  --accent:#0a6ed1; --accent-soft:#e9f1fb; --accent-line:#0a6ed1;
+  --green:#0f7b3d; --green-soft:#e4f3ea;
+  --amber:#a35200; --amber-soft:#fcf0e2;
+  --red:#c6262e; --red-soft:#fbebeb;
+  --chip:#eef1f5; --chip-text:#45525f;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+  --radius:10px;
+  --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0e141b; --panel:#151c24; --panel-2:#1a222b; --border:#29323d;
+    --text:#e7ecf2; --text-2:#a7b2bd; --muted:#6e7b89;
+    --accent:#54a6f2; --accent-soft:#122a40; --accent-line:#54a6f2;
+    --green:#5cc98c; --green-soft:#123021;
+    --amber:#efa24d; --amber-soft:#322411;
+    --red:#f2777a; --red-soft:#3a1a1c;
+    --chip:#212b35; --chip-text:#a7b2bd;
+    --shadow:0 1px 2px rgba(0,0,0,.35);
+  }
+}
+/* ---- 基础 ---- */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:14px/1.5 -apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+  display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:10px;padding:10px 16px;
+  background:var(--panel);border-bottom:1px solid var(--border)}
+.logo{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;
+  justify-content:center;background:var(--accent);color:#fff;font-size:14px;font-weight:700}
+.brand{font-weight:650;font-size:15px;letter-spacing:.2px}
+.brand .ver{color:var(--muted);font-weight:500;font-size:12px;margin-left:2px}
+#mode{margin-left:auto}
+.chip{display:inline-flex;align-items:center;gap:5px;background:var(--chip);
+  color:var(--chip-text);border:1px solid var(--border);border-radius:999px;
+  padding:3px 11px;font-size:12px}
+.chip b{color:var(--text);font-weight:600}
+.badge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 10px;
+  font-size:12px;font-weight:550}
+.badge.kind{background:var(--accent-soft);color:var(--accent)}
+.badge.ddic{background:var(--green-soft);color:var(--green)}
+.badge.rows{background:var(--chip);color:var(--chip-text)}
+.badge.cover-ok{background:var(--green-soft);color:var(--green)}
+.badge.cover-warn{background:var(--amber-soft);color:var(--amber)}
+.badge.cover-bad{background:var(--red-soft);color:var(--red)}
+/* ---- 三栏 ---- */
+#wrap{flex:1;display:flex;min-height:0}
+.pane{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#left{width:236px;border-right:1px solid var(--border)}
+#mid{width:352px;border-right:1px solid var(--border)}
+#main{flex:1;overflow:auto;padding:16px 18px}
+.pane-head{padding:10px 12px 8px;background:var(--panel);position:sticky;top:0;z-index:2;
+  border-bottom:1px solid var(--border)}
+.pane-title{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.pane-title h3{margin:0;font-size:13px;font-weight:650;letter-spacing:.3px}
+.pane-title .cnt{color:var(--muted);font-size:12px}
+.pane-body{flex:1;overflow:auto;padding:6px}
+input{width:100%;padding:7px 11px;border:1px solid var(--border);border-radius:8px;
+  background:var(--panel);color:var(--text);font-size:13px}
+input::placeholder{color:var(--muted)}
+input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+/* ---- 列表项 ---- */
+.item{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+  padding:6px 10px;border-radius:8px;cursor:pointer;user-select:none}
+.item:hover{background:var(--accent-soft)}
+.item.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.item .label{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.item .meta{color:var(--muted);font-size:11px;white-space:nowrap;font-family:var(--mono)}
+.empty{color:var(--muted);text-align:center;padding:26px 10px;font-size:13px}
+/* ---- 详情 ---- */
+.detail-head h2{margin:0;font-size:16px;font-family:var(--mono);word-break:break-all}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  margin:14px 0;box-shadow:var(--shadow);overflow:hidden}
+.card-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 14px;
+  background:var(--panel-2);border-bottom:1px solid var(--border)}
+.card-h .name{font-family:var(--mono);font-weight:600;font-size:13.5px}
+.card-b{padding:6px 0}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{background:var(--panel-2);text-align:left;font-weight:600;position:sticky;top:0;
+  color:var(--text-2)}
+td,th{border-bottom:1px solid var(--border);padding:6px 12px}
+tbody tr:hover td{background:var(--accent-soft)}
+td.i{font-family:var(--mono);color:var(--text-2)}
+pre{background:var(--panel-2);border-radius:8px;margin:8px 12px;padding:10px 12px;
+  overflow:auto;font:12px/1.55 var(--mono);white-space:pre;color:var(--text)}
+.muted{color:var(--muted)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+::-webkit-scrollbar-track{background:transparent}
 </style></head><body>
-<div id="left"><h3>簇表</h3><input id="tq" placeholder="过滤…"><div id="tables"></div></div>
-<div id="mid"><h3>簇</h3><input id="cq" placeholder="过滤…"><div id="clusters"></div></div>
-<div id="main"><div id="detail" class="muted">← 选择一个簇</div></div>
+<header>
+  <span class="logo">◆</span>
+  <span class="brand">sap-indx-decoder <span class="ver">__VERSION__</span></span>
+  <span id="mode" class="chip">…</span>
+</header>
+<div id="wrap">
+  <div class="pane" id="left">
+    <div class="pane-head">
+      <div class="pane-title"><h3>簇表</h3><span class="cnt" id="tcount"></span></div>
+      <input id="tq" placeholder="过滤簇表…">
+    </div>
+    <div class="pane-body" id="tables"></div>
+  </div>
+  <div class="pane" id="mid">
+    <div class="pane-head">
+      <div class="pane-title"><h3>簇</h3><span class="cnt" id="ccount"></span></div>
+      <input id="cq" placeholder="搜索簇(RELID/键名)…">
+    </div>
+    <div class="pane-body" id="clusters"></div>
+  </div>
+  <div id="main"><div id="detail" class="empty">← 选择一个簇查看内容</div></div>
+</div>
 <script>
 let MODE=null, TABLES=[], CUR_TABLE=null, CLUSTERS=[], CUR_KV=null, CUR_FILE=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const kindText=k=>({value:'单值',struct:'结构',table:'表'}[k]||k);
+const coverBadge=v=>v>=95?'cover-ok':v>=80?'cover-warn':'cover-bad';
 async function jget(url){const r=await fetch(url);const t=await r.text();
   try{return JSON.parse(t)}catch(e){throw new Error(t)}}
 async function init(){
   const d=await jget('/api/tables'); MODE=d.mode; TABLES=d.tables;
-  if(d.error){$('detail').innerHTML='<div class="muted">'+esc(d.error)+'</div>';}
+  $('mode').innerHTML = MODE==='offline' ? '<b>离线模式</b>' : '<b>连库模式</b>';
   renderTables();
 }
 function renderTables(){
   const q=$('tq').value.toLowerCase();
-  $('tables').innerHTML=TABLES.filter(t=>t.toLowerCase().includes(q))
-    .map(t=>`<div class="item" data-t="${esc(t)}">${esc(t)}</div>`).join('');
+  const src=TABLES.filter(t=>t.toLowerCase().includes(q));
+  $('tcount').textContent=src.length+' 张';
+  $('tables').innerHTML=src.length
+    ? src.map(t=>`<div class="item" data-t="${esc(t)}"><span class="label">${esc(t)}</span></div>`).join('')
+    : '<div class="empty">无匹配</div>';
   [...$('tables').children].forEach(el=>el.onclick=()=>pickTable(el.dataset.t));
 }
 async function pickTable(t){
   CUR_TABLE=t; CUR_FILE=null;
   document.querySelectorAll('#tables .item').forEach(e=>e.classList.toggle('sel',e.dataset.t===t));
+  $('ccount').textContent='…';
+  $('clusters').innerHTML='';
   await loadClusters();
 }
 async function loadClusters(){
@@ -71,42 +183,56 @@ async function loadClusters(){
 function renderClusters(){
   const q=$('cq').value.toLowerCase();
   const src=(MODE==='db')?CLUSTERS:CLUSTERS.filter(c=>c.label.toLowerCase().includes(q));
-  $('clusters').innerHTML=src.map((c,i)=>`<div class="item" data-i="${i}">${esc(c.label)} <span class="muted">${c.chunks}块 ${c.bytes}B</span></div>`).join('');
+  $('ccount').textContent=src.length+' 个';
+  $('clusters').innerHTML=src.length
+    ? src.map((c,i)=>`<div class="item" data-i="${i}"><span class="label">${esc(c.label)}</span><span class="meta">${c.chunks}块·${c.bytes}B</span></div>`).join('')
+    : '<div class="empty">无匹配</div>';
   [...$('clusters').children].forEach(el=>el.onclick=()=>pickCluster(+el.dataset.i));
 }
 async function pickCluster(i){
   const c=CLUSTERS[i];
   document.querySelectorAll('#clusters .item').forEach((e,j)=>e.classList.toggle('sel',j===i));
+  $('detail').innerHTML='<div class="empty">解析中…</div>';
   let qs;
   if(MODE==='offline'){CUR_FILE=c.file; qs='file='+encodeURIComponent(c.file);}
   else{CUR_KV=c.kv; qs=Object.entries(c.kv).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
        qs='table='+encodeURIComponent(CUR_TABLE)+'&'+qs;}
-  const d=await jget('/api/cluster?'+qs);
-  renderDetail(d);
+  try{
+    const d=await jget('/api/cluster?'+qs);
+    renderDetail(d);
+  }catch(e){$('detail').innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }
 function renderDetail(d){
-  if(d.error){$('detail').innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}
+  if(d.error){$('detail').innerHTML='<div class="empty">'+esc(d.error)+'</div>';return;}
   const c=d.container;
-  let h=`<h3>${esc(d.label)}</h3><div class="muted">容器 v${c.version} · 代码页 ${c.codepage} · `+
-        `${c.compressed_bytes}→${c.uncompressed_bytes}B (${esc(c.algorithm||'未压缩')}) · `+
-        `覆盖 ${d.coverage_pct}%%</div>`;
+  let h=`<div class="detail-head"><h2>${esc(d.label)}</h2>
+    <div class="chips">
+      <span class="chip">容器 <b>v${c.version}</b></span>
+      <span class="chip">代码页 <b>${esc(c.codepage)}</b></span>
+      <span class="chip"><b>${c.compressed_bytes}</b> → <b>${c.uncompressed_bytes}</b> B</span>
+      <span class="chip">${esc(c.algorithm||'未压缩')}</span>
+      <span class="badge ${coverBadge(d.coverage_pct)}">覆盖 ${d.coverage_pct}%</span>
+    </div></div>`;
   d.components.forEach((comp,ci)=>{
-    h+=`<div style="margin-top:14px"><b>${esc(comp.name)}</b> <span class="badge">${esc(comp.kind)}</span>`;
-    if(comp.typed)h+='<span class="badge" style="background:#d1fae5">DDIC 类型化</span>';
-    h+=`<span class="badge">${comp.kind==='value'?'':comp.rows.length+' 行'}</span></div>`;
-    if(comp.kind==='value'){h+=`<pre>${esc(comp.value_text)}</pre>`;return;}
+    h+=`<div class="card"><div class="card-h"><span class="name">${esc(comp.name)}</span>
+      <span class="badge kind">${esc(kindText(comp.kind))}</span>`;
+    if(comp.kind!=='value')h+=`<span class="badge rows">${comp.rows.length} 行</span>`;
+    if(comp.ddic)h+='<span class="badge ddic">DDIC 类型化</span>';
+    h+='</div><div class="card-b">';
+    if(comp.kind==='value'){h+=`<pre>${esc(comp.value_text)}</pre>`;h+='</div></div>';return;}
     if(comp.ddic){
-      h+='<table><tr>'+comp.columns.map(col=>`<th>${esc(col.name)}</th>`).join('')+'</tr>';
+      h+='<table><thead><tr>'+comp.columns.map(col=>`<th>${esc(col.name)}</th>`).join('')+'</tr></thead><tbody>';
       comp.typed_rows.slice(0,50).forEach(r=>{
         h+='<tr>'+comp.columns.map(col=>`<td>${esc(r[col.name])}</td>`).join('')+'</tr>';});
-      if(comp.typed_rows.length>50)h+=`<tr><td colspan="${comp.columns.length}" class="muted">… 共 ${comp.typed_rows.length} 行</td></tr>`;
-      h+='</table>';
+      h+='</tbody></table>';
+      if(comp.typed_rows.length>50)h+=`<div class="empty">… 共 ${comp.typed_rows.length} 行(网页仅显示前 50 行,导出用 CLI)</div>`;
     }else{
       h+='<pre>';
       comp.rows.slice(0,100).forEach(r=>{h+=esc(r.text)+'\\n';});
-      if(comp.rows.length>100)h+=`… 共 ${comp.rows.length} 行\\n`;
+      if(comp.rows.length>100)h+=`\\n… 共 ${comp.rows.length} 行(网页仅显示前 100 行)`;
       h+='</pre>';
     }
+    h+='</div></div>';
   });
   $('detail').innerHTML=h;
 }
@@ -114,7 +240,7 @@ $('tq').oninput=renderTables;
 let cqTimer=null;
 $('cq').oninput=()=>{clearTimeout(cqTimer);cqTimer=setTimeout(loadClusters,250);};
 init();
-</script></body></html>""" % {"version": escape(__version__)}
+</script></body></html>"""
 
 
 class _App:
@@ -125,7 +251,6 @@ class _App:
         self.offline_dir = getattr(args, "offline_dir", None)
         self.schema = None
         self._keyinfo = {}
-        self._offline_files = None
         if not self.offline_dir:
             conn = connect(args)
             cur = conn.cursor()
@@ -215,7 +340,7 @@ def _make_handler(app):
             qs = parse_qs(u.query)
             try:
                 if u.path in ("/", "/index.html"):
-                    body = _PAGE.encode("utf-8")
+                    body = _PAGE.replace("__VERSION__", __version__).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
