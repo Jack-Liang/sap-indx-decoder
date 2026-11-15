@@ -121,8 +121,7 @@ sap_indx_decoder/
 ├── lzh.py         # LZH inflate: pure Python + native bridge (Rust, optional)
 ├── container.py   # 24-byte container header, code page, compression dispatch
 ├── marker.py      # anchored marker-stream parser (v3–v6) + text views
-├── typedecode.py  # descriptor type bytes → ABAP values (0=C 1=D 3=T 6=N 8=I)
-├── ddic.py        # DD02L/DD03L lookup + component enrichment
+├── ddic.py        # DD02L/DD03L lookup + INTTYPE-based typed decoding
 ├── db.py          # hdbcli access, cluster-key inference, fetch/iterate
 ├── export.py      # sqlite / parquet writers
 ├── web.py         # serve: zero-dependency local preview

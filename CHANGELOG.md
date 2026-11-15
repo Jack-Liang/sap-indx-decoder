@@ -9,6 +9,10 @@
 - `serve --port` accepted as alias of `--http-port`.
 
 ### Removed
+- `typedecode.py` — descriptor-path decoder was unused by the pipeline
+  (typed decoding goes through `ddic.enrich_components`); the descriptor
+  type-byte semantics (0=C 1=D 3=T 6=N 8=I) remain documented in
+  `docs/FORMAT.md` §4.1. Its unit tests moved onto `ddic._decode_field`.
 - `indx_tool.py` compatibility shim — use `python3 -m sap_indx_decoder` or the
   installed `sap-indx-decoder` console script.
 

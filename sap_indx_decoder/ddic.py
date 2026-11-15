@@ -7,8 +7,6 @@
 """
 import struct
 
-from .typedecode import TYPE_MAP
-
 __all__ = ["DDIC", "enrich_components"]
 
 _VAR_TYPES = ("STRG", "SSTR", "RSTR")   # 变长类型,不参与定宽行
