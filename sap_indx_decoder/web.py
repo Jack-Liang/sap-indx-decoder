@@ -5,8 +5,8 @@
   --offline-dir DIR  浏览本地 dump 的 .bin 文件(自动加载 .ddic.json 侧车)
 
 零框架依赖:stdlib http.server + 单页内联 HTML/CSS/JS。
-设计令牌采用语义化 CSS 变量,自动跟随系统明暗主题(prefers-color-scheme)。
-默认只绑定 127.0.0.1。
+设计令牌采用语义化 CSS 变量,自动跟随系统明暗主题;覆盖率用 SVG 圆环
+展示;组件卡片带渐显动画。默认只绑定 127.0.0.1。
 """
 import json
 import os
@@ -29,37 +29,45 @@ _PAGE = """<!doctype html>
 :root{
   --bg:#f2f4f7; --panel:#ffffff; --panel-2:#f7f9fb; --border:#e2e6eb;
   --text:#1a2129; --text-2:#55616d; --muted:#8b95a1;
-  --accent:#0a6ed1; --accent-soft:#e9f1fb; --accent-line:#0a6ed1;
+  --accent:#0a6ed1; --accent-2:#3aa0f0; --accent-soft:#e9f1fb;
   --green:#0f7b3d; --green-soft:#e4f3ea;
   --amber:#a35200; --amber-soft:#fcf0e2;
   --red:#c6262e; --red-soft:#fbebeb;
   --chip:#eef1f5; --chip-text:#45525f;
-  --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
-  --radius:10px;
+  --panel-glass:rgba(255,255,255,.78);
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.06);
+  --radius:12px;
   --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
 }
 @media (prefers-color-scheme: dark){
   :root{
-    --bg:#0e141b; --panel:#151c24; --panel-2:#1a222b; --border:#29323d;
+    --bg:#0d1218; --panel:#151d26; --panel-2:#1a232d; --border:#2a3540;
     --text:#e7ecf2; --text-2:#a7b2bd; --muted:#6e7b89;
-    --accent:#54a6f2; --accent-soft:#122a40; --accent-line:#54a6f2;
+    --accent:#54a6f2; --accent-2:#7db8f5; --accent-soft:#122a40;
     --green:#5cc98c; --green-soft:#123021;
     --amber:#efa24d; --amber-soft:#322411;
     --red:#f2777a; --red-soft:#3a1a1c;
     --chip:#212b35; --chip-text:#a7b2bd;
-    --shadow:0 1px 2px rgba(0,0,0,.35);
+    --panel-glass:rgba(21,29,38,.72);
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.28);
   }
 }
 /* ---- 基础 ---- */
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--text);
+body{margin:0;background:
+  radial-gradient(900px 500px at 85% -10%, var(--accent-soft), transparent 60%),
+  var(--bg);
+  color:var(--text);
   font:14px/1.5 -apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
   display:flex;flex-direction:column}
 header{display:flex;align-items:center;gap:10px;padding:10px 16px;
-  background:var(--panel);border-bottom:1px solid var(--border)}
-.logo{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;
-  justify-content:center;background:var(--accent);color:#fff;font-size:14px;font-weight:700}
+  background:var(--panel-glass);backdrop-filter:blur(12px) saturate(1.15);
+  border-bottom:1px solid var(--border)}
+.logo{width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;
+  justify-content:center;background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  color:#fff;box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 45%,transparent)}
+.logo svg{width:15px;height:15px}
 .brand{font-weight:650;font-size:15px;letter-spacing:.2px}
 .brand .ver{color:var(--muted);font-weight:500;font-size:12px;margin-left:2px}
 #mode{margin-left:auto}
@@ -72,20 +80,19 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;
 .badge.kind{background:var(--accent-soft);color:var(--accent)}
 .badge.ddic{background:var(--green-soft);color:var(--green)}
 .badge.rows{background:var(--chip);color:var(--chip-text)}
-.badge.cover-ok{background:var(--green-soft);color:var(--green)}
-.badge.cover-warn{background:var(--amber-soft);color:var(--amber)}
-.badge.cover-bad{background:var(--red-soft);color:var(--red)}
 /* ---- 三栏 ---- */
 #wrap{flex:1;display:flex;min-height:0}
 .pane{display:flex;flex-direction:column;min-height:0;overflow:hidden}
-#left{width:236px;border-right:1px solid var(--border)}
-#mid{width:352px;border-right:1px solid var(--border)}
-#main{flex:1;overflow:auto;padding:16px 18px}
-.pane-head{padding:10px 12px 8px;background:var(--panel);position:sticky;top:0;z-index:2;
+#left{width:240px;border-right:1px solid var(--border);background:var(--panel)}
+#mid{width:360px;border-right:1px solid var(--border);background:var(--panel)}
+#main{flex:1;overflow:auto;padding:14px 18px}
+.pane-head{padding:10px 12px 8px;position:sticky;top:0;z-index:2;
+  background:var(--panel-glass);backdrop-filter:blur(10px);
   border-bottom:1px solid var(--border)}
 .pane-title{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
-.pane-title h3{margin:0;font-size:13px;font-weight:650;letter-spacing:.3px}
-.pane-title .cnt{color:var(--muted);font-size:12px}
+.pane-title h3{margin:0;font-size:12px;font-weight:700;letter-spacing:.8px;
+  text-transform:uppercase;color:var(--text-2)}
+.pane-title .cnt{color:var(--muted);font-size:12px;font-family:var(--mono)}
 .pane-body{flex:1;overflow:auto;padding:6px}
 input{width:100%;padding:7px 11px;border:1px solid var(--border);border-radius:8px;
   background:var(--panel);color:var(--text);font-size:13px}
@@ -93,27 +100,46 @@ input::placeholder{color:var(--muted)}
 input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 /* ---- 列表项 ---- */
 .item{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
-  padding:6px 10px;border-radius:8px;cursor:pointer;user-select:none}
+  padding:6px 10px;border-radius:8px;cursor:pointer;user-select:none;
+  transition:background .12s}
 .item:hover{background:var(--accent-soft)}
 .item.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
 .item .label{font-family:var(--mono);font-size:12.5px;word-break:break-all}
 .item .meta{color:var(--muted);font-size:11px;white-space:nowrap;font-family:var(--mono)}
-.empty{color:var(--muted);text-align:center;padding:26px 10px;font-size:13px}
+.empty{color:var(--muted);text-align:center;padding:30px 12px;font-size:13px}
+.empty svg{width:56px;height:56px;opacity:.45;margin-bottom:8px}
 /* ---- 详情 ---- */
-.detail-head h2{margin:0;font-size:16px;font-family:var(--mono);word-break:break-all}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.detail-head{position:sticky;top:0;z-index:3;margin:-14px -18px 4px;
+  padding:12px 18px 10px;background:var(--panel-glass);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border)}
+.detail-head h2{margin:0 0 8px;font-size:16px;font-family:var(--mono);
+  word-break:break-all;display:flex;align-items:center;gap:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{padding:3px 11px}
+.ring{position:relative;width:42px;height:42px;flex:none}
+.ring svg{width:42px;height:42px;transform:rotate(-90deg)}
+.ring .ring-bg{fill:none;stroke:var(--chip);stroke-width:5}
+.ring .ring-fg{fill:none;stroke-width:5;stroke-linecap:round;
+  transition:stroke-dashoffset .4s ease}
+.ring.ok .ring-fg{stroke:var(--green)}
+.ring.warn .ring-fg{stroke:var(--amber)}
+.ring.bad .ring-fg{stroke:var(--red)}
+.ring-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:10.5px;font-weight:700;font-family:var(--mono)}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
-  margin:14px 0;box-shadow:var(--shadow);overflow:hidden}
+  margin:12px 0;box-shadow:var(--shadow);overflow:hidden;
+  animation:rise .28s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 .card-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 14px;
   background:var(--panel-2);border-bottom:1px solid var(--border)}
-.card-h .name{font-family:var(--mono);font-weight:600;font-size:13.5px}
-.card-b{padding:6px 0}
+.card-h .icon{width:15px;height:15px;color:var(--accent);flex:none}
+.card-h .name{font-family:var(--mono);font-weight:600;font-size:13.5px;word-break:break-all}
+.card-b{padding:4px 0}
 table{border-collapse:collapse;width:100%;font-size:12.5px}
 th{background:var(--panel-2);text-align:left;font-weight:600;position:sticky;top:0;
   color:var(--text-2)}
 td,th{border-bottom:1px solid var(--border);padding:6px 12px}
 tbody tr:hover td{background:var(--accent-soft)}
-td.i{font-family:var(--mono);color:var(--text-2)}
 pre{background:var(--panel-2);border-radius:8px;margin:8px 12px;padding:10px 12px;
   overflow:auto;font:12px/1.55 var(--mono);white-space:pre;color:var(--text)}
 .muted{color:var(--muted)}
@@ -123,7 +149,7 @@ pre{background:var(--panel-2);border-radius:8px;margin:8px 12px;padding:10px 12p
 ::-webkit-scrollbar-track{background:transparent}
 </style></head><body>
 <header>
-  <span class="logo">◆</span>
+  <span class="logo"><svg viewBox="0 0 16 16" fill="none"><path d="M8 1l6 3.5v7L8 15 2 11.5v-7L8 1z" fill="currentColor" opacity=".92"/><path d="M8 1v14M2 4.5l12 7M14 4.5l-12 7" stroke="rgba(255,255,255,.55)" stroke-width="1"/></svg></span>
   <span class="brand">sap-indx-decoder <span class="ver">__VERSION__</span></span>
   <span id="mode" class="chip">…</span>
 </header>
@@ -142,14 +168,36 @@ pre{background:var(--panel-2);border-radius:8px;margin:8px 12px;padding:10px 12p
     </div>
     <div class="pane-body" id="clusters"></div>
   </div>
-  <div id="main"><div id="detail" class="empty">← 选择一个簇查看内容</div></div>
+  <div id="main">
+    <div id="detail" class="empty">
+      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6">
+        <ellipse cx="24" cy="11" rx="14" ry="5"/>
+        <path d="M10 11v26c0 2.8 6.3 5 14 5s14-2.2 14-5V11"/>
+        <path d="M10 24c0 2.8 6.3 5 14 5s14-2.2 14-5"/>
+      </svg>
+      <div>← 选择一个簇查看内容</div>
+    </div>
+  </div>
 </div>
 <script>
 let MODE=null, TABLES=[], CUR_TABLE=null, CLUSTERS=[], CUR_KV=null, CUR_FILE=null;
+let clusterReqId=0;   // 防竞态: 只渲染最后一次簇列表请求
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const kindText=k=>({value:'单值',struct:'结构',table:'表'}[k]||k);
-const coverBadge=v=>v>=95?'cover-ok':v>=80?'cover-warn':'cover-bad';
+const kindIcon=k=>({
+  table:'<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M6.5 6.5v7"/></svg>',
+  struct:'<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2.5" width="5" height="5" rx="1"/><rect x="9" y="2.5" width="5" height="5" rx="1"/><rect x="2" y="8.5" width="5" height="5" rx="1"/><rect x="9" y="8.5" width="5" height="5" rx="1"/></svg>',
+  value:'<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.6"/></svg>'
+}[k]||'');
+function ringSvg(v){
+  const C=113.1, off=(C*(1-Math.min(Math.max(v,0),100)/100)).toFixed(1);
+  const cls=v>=95?'ok':v>=80?'warn':'bad';
+  return `<span class="ring ${cls}"><svg viewBox="0 0 44 44">
+    <circle class="ring-bg" cx="22" cy="22" r="18"/>
+    <circle class="ring-fg" cx="22" cy="22" r="18" stroke-dasharray="${C}" stroke-dashoffset="${off}"/>
+  </svg><span class="ring-num">${v}%</span></span>`;
+}
 async function jget(url){const r=await fetch(url);const t=await r.text();
   try{return JSON.parse(t)}catch(e){throw new Error(t)}}
 async function init(){
@@ -170,13 +218,15 @@ async function pickTable(t){
   CUR_TABLE=t; CUR_FILE=null;
   document.querySelectorAll('#tables .item').forEach(e=>e.classList.toggle('sel',e.dataset.t===t));
   $('ccount').textContent='…';
-  $('clusters').innerHTML='';
+  $('clusters').innerHTML='<div class="empty">加载中…</div>';
   await loadClusters();
 }
 async function loadClusters(){
+  const reqId=++clusterReqId;
   let qs='table='+encodeURIComponent(CUR_TABLE);
   if(MODE==='db' && $('cq').value) qs+='&q='+encodeURIComponent($('cq').value);
   const d=await jget('/api/clusters?'+qs);
+  if(reqId!==clusterReqId)return;   // 已有更新的请求,丢弃本次结果
   CLUSTERS=d.items;
   renderClusters();
 }
@@ -205,19 +255,21 @@ async function pickCluster(i){
 function renderDetail(d){
   if(d.error){$('detail').innerHTML='<div class="empty">'+esc(d.error)+'</div>';return;}
   const c=d.container;
-  let h=`<div class="detail-head"><h2>${esc(d.label)}</h2>
+  const nRows=d.components.reduce((a,comp)=>a+(comp.rows?comp.rows.length:0),0);
+  let h=`<div class="detail-head"><h2>${esc(d.label)} ${ringSvg(d.coverage_pct)}</h2>
     <div class="chips">
       <span class="chip">容器 <b>v${c.version}</b></span>
       <span class="chip">代码页 <b>${esc(c.codepage)}</b></span>
       <span class="chip"><b>${c.compressed_bytes}</b> → <b>${c.uncompressed_bytes}</b> B</span>
       <span class="chip">${esc(c.algorithm||'未压缩')}</span>
-      <span class="badge ${coverBadge(d.coverage_pct)}">覆盖 ${d.coverage_pct}%</span>
+      <span class="chip">组件 <b>${d.components.length}</b></span>
+      <span class="chip">行 <b>${nRows}</b></span>
     </div></div>`;
-  d.components.forEach((comp,ci)=>{
-    h+=`<div class="card"><div class="card-h"><span class="name">${esc(comp.name)}</span>
+  d.components.forEach((comp)=>{
+    h+=`<div class="card"><div class="card-h">${kindIcon(comp.kind)}<span class="name">${esc(comp.name)}</span>
       <span class="badge kind">${esc(kindText(comp.kind))}</span>`;
     if(comp.kind!=='value')h+=`<span class="badge rows">${comp.rows.length} 行</span>`;
-    if(comp.ddic)h+='<span class="badge ddic">DDIC 类型化</span>';
+    if(comp.ddic)h+='<span class="badge ddic">✓ DDIC 类型化</span>';
     h+='</div><div class="card-b">';
     if(comp.kind==='value'){h+=`<pre>${esc(comp.value_text)}</pre>`;h+='</div></div>';return;}
     if(comp.ddic){
@@ -235,6 +287,7 @@ function renderDetail(d){
     h+='</div></div>';
   });
   $('detail').innerHTML=h;
+  $('main').scrollTop=0;
 }
 $('tq').oninput=renderTables;
 let cqTimer=null;
