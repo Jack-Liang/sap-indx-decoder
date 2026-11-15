@@ -1,0 +1,13 @@
+[package]
+name = "sap-indx-decoder-native"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+description = "Native LZH decompressor for sap-indx-decoder (PyO3)"
+
+[lib]
+crate-type = ["cdylib"]
+name = "_native"
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["abi3-py39"] }
