@@ -23,6 +23,7 @@ _PAGE = """<!doctype html>
 <html lang="zh"><head><meta charset="utf-8">
 <title>sap-indx-decoder v%(version)s</title>
 <style>
+ html,body{background:#fff;color:#111}
  body{font:14px/1.5 -apple-system,'Segoe UI',Roboto,'PingFang SC',sans-serif;margin:0;display:flex;height:100vh}
  #left{width:230px;border-right:1px solid #ddd;overflow:auto;padding:10px}
  #mid{width:340px;border-right:1px solid #ddd;overflow:auto;padding:10px}
@@ -31,7 +32,7 @@ _PAGE = """<!doctype html>
  .item:hover{background:#eef}.item.sel{background:#dcecff}
  table{border-collapse:collapse;margin:6px 0}td,th{border:1px solid #ccc;padding:3px 8px;font-size:13px}
  th{background:#f2f2f2;text-align:left}.badge{display:inline-block;background:#e2e8f0;border-radius:8px;padding:1px 8px;margin-left:6px;font-size:12px}
- input{width:calc(100%% - 12px);padding:4px;margin-bottom:6px}
+ input{width:calc(100%% - 12px);padding:4px;margin-bottom:6px;background:#fff;color:#111}
  pre{background:#f6f8fa;padding:8px;overflow:auto;font-size:12px}
  .muted{color:#888;font-size:12px}
 </style></head><body>
@@ -58,14 +59,19 @@ function renderTables(){
 async function pickTable(t){
   CUR_TABLE=t; CUR_FILE=null;
   document.querySelectorAll('#tables .item').forEach(e=>e.classList.toggle('sel',e.dataset.t===t));
-  const d=await jget('/api/clusters?table='+encodeURIComponent(t));
+  await loadClusters();
+}
+async function loadClusters(){
+  let qs='table='+encodeURIComponent(CUR_TABLE);
+  if(MODE==='db' && $('cq').value) qs+='&q='+encodeURIComponent($('cq').value);
+  const d=await jget('/api/clusters?'+qs);
   CLUSTERS=d.items;
   renderClusters();
 }
 function renderClusters(){
   const q=$('cq').value.toLowerCase();
-  $('clusters').innerHTML=CLUSTERS.filter(c=>c.label.toLowerCase().includes(q))
-    .map((c,i)=>`<div class="item" data-i="${i}">${esc(c.label)} <span class="muted">${c.chunks}块 ${c.bytes}B</span></div>`).join('');
+  const src=(MODE==='db')?CLUSTERS:CLUSTERS.filter(c=>c.label.toLowerCase().includes(q));
+  $('clusters').innerHTML=src.map((c,i)=>`<div class="item" data-i="${i}">${esc(c.label)} <span class="muted">${c.chunks}块 ${c.bytes}B</span></div>`).join('');
   [...$('clusters').children].forEach(el=>el.onclick=()=>pickCluster(+el.dataset.i));
 }
 async function pickCluster(i){
@@ -89,22 +95,25 @@ function renderDetail(d){
     if(comp.typed)h+='<span class="badge" style="background:#d1fae5">DDIC 类型化</span>';
     h+=`<span class="badge">${comp.kind==='value'?'':comp.rows.length+' 行'}</span></div>`;
     if(comp.kind==='value'){h+=`<pre>${esc(comp.value_text)}</pre>`;return;}
-    if(comp.typed){
+    if(comp.ddic){
       h+='<table><tr>'+comp.columns.map(col=>`<th>${esc(col.name)}</th>`).join('')+'</tr>';
       comp.typed_rows.slice(0,50).forEach(r=>{
         h+='<tr>'+comp.columns.map(col=>`<td>${esc(r[col.name])}</td>`).join('')+'</tr>';});
       if(comp.typed_rows.length>50)h+=`<tr><td colspan="${comp.columns.length}" class="muted">… 共 ${comp.typed_rows.length} 行</td></tr>`;
       h+='</table>';
     }else{
-      const hid='hex'+ci;
-      h+=`<button onclick="var p=document.getElementById('${hid}');p.style.display=p.style.display==='none'?'block':'none'">hex/文本切换</button><pre id="${hid}" style="display:none">`;
+      h+='<pre>';
       comp.rows.slice(0,100).forEach(r=>{h+=esc(r.text)+'\\n';});
+      if(comp.rows.length>100)h+=`… 共 ${comp.rows.length} 行\\n`;
       h+='</pre>';
     }
   });
   $('detail').innerHTML=h;
 }
-$('tq').oninput=renderTables; $('cq').oninput=renderClusters; init();
+$('tq').oninput=renderTables;
+let cqTimer=null;
+$('cq').oninput=()=>{clearTimeout(cqTimer);cqTimer=setTimeout(loadClusters,250);};
+init();
 </script></body></html>""" % {"version": escape(__version__)}
 
 
@@ -147,9 +156,11 @@ class _App:
             conn.close()
         return self._keyinfo[table]
 
-    def clusters(self, table, offset, limit):
+    def clusters(self, table, offset, limit, search=None):
         if self.offline_dir:
             files = self.tables()
+            if search:
+                files = [f for f in files if search.lower() in f.lower()]
             items = [dict(label=f, file=f + ".bin", chunks=1,
                           bytes=os.path.getsize(os.path.join(self.offline_dir, f + ".bin")))
                      for f in files]
@@ -157,10 +168,10 @@ class _App:
         conn = connect(self.args)
         ident = table_keyinfo(conn, self.schema, table)
         ids = iter_cluster_ids(conn, self.schema, table, ident, None,
-                               offset + limit)
+                               limit, offset=offset, search=search)
         conn.close()
         items = []
-        for kv, nch, tot in ids[offset:offset + limit]:
+        for kv, nch, tot in ids:
             parts = []
             for c in ident:
                 if c != "MANDT":
@@ -217,7 +228,8 @@ def _make_handler(app):
                     table = qs["table"][0]
                     offset = int(qs.get("offset", ["0"])[0])
                     limit = min(int(qs.get("limit", ["100"])[0]), 500)
-                    items = app.clusters(table, offset, limit)
+                    search = qs.get("q", [None])[0]
+                    items = app.clusters(table, offset, limit, search)
                     self._json(dict(identity="key", items=items))
                 elif u.path == "/api/cluster":
                     if app.offline_dir:

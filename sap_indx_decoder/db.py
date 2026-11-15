@@ -89,17 +89,41 @@ def fetch_cluster(conn, schema, table, identity, kv):
     return b"".join(bytes(r[2])[:r[1]] for r in rows)
 
 
-def iter_cluster_ids(conn, schema, table, identity, relid, limit):
-    """按簇身份分组遍历。返回 [(kv dict, nchunks, total_bytes), ...] 按大小升序"""
+def iter_cluster_ids(conn, schema, table, identity, relid, limit,
+                     offset=0, search=None):
+    """按簇身份分组遍历。
+
+    返回 [(kv dict, nchunks, total_bytes), ...] 按总大小升序;
+    relid 过滤 RELID;search 为 LIKE 子串,匹配任意文本型身份列。
+    """
     where = " WHERE RELID=?" if relid else ""
+    params = [relid] if relid else []
+    if search:
+        text_cols = [c for c in identity
+                     if c not in ("MANDT",) and c in ("RELID", "SRTFD")]
+        # 其余文本键列也纳入 LIKE(如 STXL 的 TDNAME)
+        cur_probe = conn.cursor()
+        for c in identity:
+            if c in ("MANDT",) or c in text_cols:
+                continue
+            cur_probe.execute("""SELECT DATA_TYPE_NAME FROM TABLE_COLUMNS
+                                 WHERE SCHEMA_NAME=? AND TABLE_NAME=?
+                                 AND COLUMN_NAME=?""", (schema, table, c))
+            r = cur_probe.fetchone()
+            if r and r[0] in ("NVARCHAR", "VARCHAR", "CHAR"):
+                text_cols.append(c)
+        if text_cols:
+            like = " OR ".join('%s LIKE ?' % c for c in text_cols)
+            where += (" AND " if where else " WHERE ") + "(" + like + ")"
+            params += ["%%%s%%" % search] * len(text_cols)
     group = ", ".join(identity)
     cur = conn.cursor()
     cur.execute("""SELECT %s, COUNT(*), SUM(LENGTH(CLUSTD)) FROM %s%s
-                   GROUP BY %s ORDER BY SUM(LENGTH(CLUSTD)) ASC"""
-                % (group, qid(schema, table), where, group),
-                [relid] if relid else [])
+                   GROUP BY %s ORDER BY SUM(LENGTH(CLUSTD)) ASC
+                   LIMIT ? OFFSET ?""" % (group, qid(schema, table), where, group),
+                params + [limit, offset])
     out = []
     for row in cur.fetchall():
         kv = dict(zip(identity, row[:len(identity)]))
         out.append((kv, row[-2], row[-1] or 0))
-    return out[:limit]
+    return out
