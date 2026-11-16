@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- Web preview upgraded to the v0.4.2 design: table-list row counts (from
+  `M_TABLES`), RELID filter chips, cluster-key chips, parse-time chip,
+  colored hex view (24-byte container header highlighted, legend, ASCII
+  column, first 300 rows), "未类型化" badges, copy-JSON / export buttons.
 - `indx` short console-script alias (same as `sap-indx-decoder`).
 - `scan`/`export --workers N` (default 4): thread-pool cluster fetching with
   per-thread connections — O(N × RTT) on remote systems becomes O(N × RTT / N).

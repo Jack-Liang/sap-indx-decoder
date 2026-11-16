@@ -10,12 +10,13 @@
 """
 import json
 import os
+import time
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import ToolError, __version__, parse_blob
-from .db import (connect, current_schema, fetch_cluster, iter_cluster_ids,
+from .db import (connect, current_schema, fetch_cluster, iter_cluster_ids, qid,
                  table_keyinfo)
 from .ddic import DDIC, enrich_components
 from .marker import component_to_json
@@ -79,6 +80,46 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;
   transition:color .15s}
 .gh:hover{color:var(--text)}
 .gh svg{width:17px;height:17px}
+/* ---- 详情头部:分段切换 + 按钮 ---- */
+.detail-head .head-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.detail-head h2{margin:0;font-size:16px;font-family:var(--mono);
+  word-break:break-all;display:flex;align-items:center;gap:10px;flex:1;min-width:200px}
+.seg{display:inline-flex;background:var(--chip);border:1px solid var(--border);
+  border-radius:9px;padding:2px;gap:2px;flex:none}
+.seg button{border:none;background:transparent;color:var(--text-2);
+  font:600 12px/1 -apple-system,'Segoe UI',Roboto,sans-serif;
+  padding:5px 14px;border-radius:7px;cursor:pointer;transition:all .12s}
+.seg button.on{background:var(--accent);color:#fff}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);
+  background:var(--panel);color:var(--text-2);border-radius:9px;padding:6px 12px;
+  font-size:12.5px;font-weight:550;cursor:pointer;transition:all .12s;flex:none}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.1);color:#fff}
+.keys{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.keys .chip{font-family:var(--mono);font-size:11.5px;padding:2px 9px}
+.badge.unt{background:var(--amber-soft);color:var(--amber)}
+/* ---- RELID 过滤 chips ---- */
+.relids{display:flex;gap:6px;flex-wrap:wrap;padding:7px 12px 3px}
+.relids .chip{cursor:pointer;user-select:none;transition:all .12s}
+.relids .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.relids .chip.on b{color:#fff}
+/* ---- Hex 视图 ---- */
+.legend{display:flex;gap:16px;align-items:center;padding:7px 14px 0;
+  font-size:11.5px;color:var(--text-2)}
+.legend .dot{width:9px;height:9px;border-radius:2px;display:inline-block;
+  margin-right:5px;vertical-align:-1px}
+.legend .dot.hd{background:var(--accent)}
+.legend .dot.dt{background:var(--green)}
+.hexdump{background:var(--panel-2);margin:8px 12px 10px;padding:10px 14px;
+  border-radius:8px;overflow:auto;font:12px/1.75 var(--mono);white-space:pre;
+  color:var(--text-2)}
+.hrow .off{color:var(--muted);margin-right:10px}
+.hrow .b{padding:0 1px;border-radius:3px}
+.hrow .b-hd{color:var(--accent);background:var(--accent-soft);
+  box-shadow:0 0 0 1px var(--accent-soft)}
+.hrow .asc{color:var(--text);margin-left:10px}
+.hexmore{padding:0 14px 10px;font-size:11.5px;color:var(--muted)}
 .badge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 10px;
   font-size:12px;font-weight:550}
 .badge.kind{background:var(--accent-soft);color:var(--accent)}
@@ -170,6 +211,7 @@ pre{background:var(--panel-2);border-radius:8px;margin:8px 12px;padding:10px 12p
     <div class="pane-head">
       <div class="pane-title"><h3>簇</h3><span class="cnt" id="ccount"></span></div>
       <input id="cq" placeholder="搜索簇(RELID/键名)…">
+      <div class="relids" id="relids"></div>
     </div>
     <div class="pane-body" id="clusters"></div>
   </div>
@@ -186,9 +228,12 @@ pre{background:var(--panel-2);border-radius:8px;margin:8px 12px;padding:10px 12p
 </div>
 <script>
 let MODE=null, TABLES=[], CUR_TABLE=null, CLUSTERS=[], CUR_KV=null, CUR_FILE=null;
+let RELIDS=[], CUR_RELID=null, VIEW='table', CUR_DETAIL=null;
 let clusterReqId=0;   // 防竞态: 只渲染最后一次簇列表请求
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const fmtN=n=>n==null?'':n>=1000?n.toLocaleString('en-US'):n;
+const fmtB=n=>n>=1024*1024?(n/1024/1024).toFixed(1)+'M':n>=1024?(n/1024).toFixed(1)+'K':n+'B';
 const kindText=k=>({value:'单值',struct:'结构',table:'表'}[k]||k);
 const kindIcon=k=>({
   table:'<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M6.5 6.5v7"/></svg>',
@@ -207,29 +252,55 @@ async function jget(url){const r=await fetch(url);const t=await r.text();
   try{return JSON.parse(t)}catch(e){throw new Error(t)}}
 async function init(){
   const d=await jget('/api/tables'); MODE=d.mode; TABLES=d.tables;
-  $('mode').innerHTML = MODE==='offline' ? '<b>离线模式</b>' : '<b>连库模式</b>';
+  $('mode').innerHTML = MODE==='offline' ? '<b>离线模式</b>'
+    : '<span style="color:var(--green)">●</span> <b>连库模式</b> '+esc((TABLES[0]||{}).schema||'');
   renderTables();
 }
 function renderTables(){
   const q=$('tq').value.toLowerCase();
-  const src=TABLES.filter(t=>t.toLowerCase().includes(q));
+  const src=TABLES.filter(t=>t.name.toLowerCase().includes(q));
   $('tcount').textContent=src.length+' 张';
   $('tables').innerHTML=src.length
-    ? src.map(t=>`<div class="item" data-t="${esc(t)}"><span class="label">${esc(t)}</span></div>`).join('')
+    ? src.map(t=>{
+        const meta = t.rows!=null ? '<span class="meta">'+fmtN(t.rows)+'</span>'
+                   : t.bytes!=null ? '<span class="meta">'+fmtB(t.bytes)+'</span>' : '';
+        return `<div class="item" data-t="${esc(t.name)}"><span class="label">${esc(t.name)}</span>${meta}</div>`;
+      }).join('')
     : '<div class="empty">无匹配</div>';
   [...$('tables').children].forEach(el=>el.onclick=()=>pickTable(el.dataset.t));
 }
 async function pickTable(t){
-  CUR_TABLE=t; CUR_FILE=null;
+  CUR_TABLE=t; CUR_FILE=null; CUR_RELID=null;
   document.querySelectorAll('#tables .item').forEach(e=>e.classList.toggle('sel',e.dataset.t===t));
   $('ccount').textContent='…';
   $('clusters').innerHTML='<div class="empty">加载中…</div>';
+  await loadRelids();
   await loadClusters();
+}
+async function loadRelids(){
+  RELIDS=[]; CUR_RELID=null;
+  $('relids').innerHTML='';
+  if(MODE!=='db')return;
+  try{
+    const d=await jget('/api/relids?table='+encodeURIComponent(CUR_TABLE));
+    RELIDS=d.relids||[];
+  }catch(e){return;}
+  $('relids').innerHTML=RELIDS.length<2 ? '' :
+    '<span class="chip on" data-r="">全部 <b>'+RELIDS.reduce((a,r)=>a+r.n,0)+'</b></span>'
+    + RELIDS.map(r=>`<span class="chip" data-r="${esc(r.relid)}">${esc(r.relid)} <b>${fmtN(r.n)}</b></span>`).join('');
+  [...$('relids').children].forEach(el=>el.onclick=()=>{
+    CUR_RELID=el.dataset.r||null;
+    [...$('relids').children].forEach(e=>e.classList.toggle('on',e===el));
+    loadClusters();
+  });
 }
 async function loadClusters(){
   const reqId=++clusterReqId;
   let qs='table='+encodeURIComponent(CUR_TABLE);
-  if(MODE==='db' && $('cq').value) qs+='&q='+encodeURIComponent($('cq').value);
+  if(MODE==='db'){
+    if($('cq').value) qs+='&q='+encodeURIComponent($('cq').value);
+    if(CUR_RELID) qs+='&relid='+encodeURIComponent(CUR_RELID);
+  }
   const d=await jget('/api/clusters?'+qs);
   if(reqId!==clusterReqId)return;   // 已有更新的请求,丢弃本次结果
   CLUSTERS=d.items;
@@ -240,7 +311,7 @@ function renderClusters(){
   const src=(MODE==='db')?CLUSTERS:CLUSTERS.filter(c=>c.label.toLowerCase().includes(q));
   $('ccount').textContent=src.length+' 个';
   $('clusters').innerHTML=src.length
-    ? src.map((c,i)=>`<div class="item" data-i="${i}"><span class="label">${esc(c.label)}</span><span class="meta">${c.chunks}块·${c.bytes}B</span></div>`).join('')
+    ? src.map((c,i)=>`<div class="item" data-i="${i}"><span class="label">${esc(c.label)}</span><span class="meta">${c.chunks}块 ${fmtB(c.bytes)}</span></div>`).join('')
     : '<div class="empty">无匹配</div>';
   [...$('clusters').children].forEach(el=>el.onclick=()=>pickCluster(+el.dataset.i));
 }
@@ -254,29 +325,43 @@ async function pickCluster(i){
        qs='table='+encodeURIComponent(CUR_TABLE)+'&'+qs;}
   try{
     const d=await jget('/api/cluster?'+qs);
-    renderDetail(d);
+    CUR_DETAIL=d; VIEW='table';
+    renderDetail();
   }catch(e){$('detail').innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }
-function renderDetail(d){
-  if(d.error){$('detail').innerHTML='<div class="empty">'+esc(d.error)+'</div>';return;}
-  const c=d.container;
-  const nRows=d.components.reduce((a,comp)=>a+(comp.rows?comp.rows.length:0),0);
-  let h=`<div class="detail-head"><h2>${esc(d.label)} ${ringSvg(d.coverage_pct)}</h2>
-    <div class="chips">
-      <span class="chip">容器 <b>v${c.version}</b></span>
-      <span class="chip">代码页 <b>${esc(c.codepage)}</b></span>
-      <span class="chip"><b>${c.compressed_bytes}</b> → <b>${c.uncompressed_bytes}</b> B</span>
-      <span class="chip">${esc(c.algorithm||'未压缩')}</span>
-      <span class="chip">组件 <b>${d.components.length}</b></span>
-      <span class="chip">行 <b>${nRows}</b></span>
-    </div></div>`;
+function hexCard(d){
+  const raw=d.raw_hex, total=d.raw_len, ROW=16, MAXROWS=300;
+  const nRows=Math.ceil(total/ROW), rows=Math.min(nRows,MAXROWS);
+  let h='';
+  for(let r=0;r<rows;r++){
+    let cells='',asc='';
+    for(let j=0;j<ROW;j++){
+      const idx=r*ROW+j;
+      if(idx>=total){cells+='   ';continue;}
+      const b=parseInt(raw.substr(idx*2,2),16);
+      cells+=`<span class="${idx<24?'b-hd':'b'}">${b.toString(16).padStart(2,'0')}</span> `;
+      asc += b>=32&&b<127 ? String.fromCharCode(b) : '·';
+    }
+    h+=`<div class="hrow"><span class="off">${(r*ROW).toString(16).padStart(8,'0')}</span>${cells}<span class="asc">${esc(asc)}</span></div>`;
+  }
+  const legend=`<div class="legend"><span><span class="dot hd"></span>容器头 24 B</span>`
+    +(d.container.compressed?`<span><span class="dot dt"></span>${esc(d.container.algorithm||'LZH')} 压缩数据</span>`:'')+`</div>`;
+  const more=nRows>MAXROWS?`<div class="hexmore">… 共 ${fmtN(total)} 字节 / ${fmtN(nRows)} 行,网页仅渲染前 ${MAXROWS} 行(完整导出用 CLI)</div>`:'';
+  return `<div class="card"><div class="card-h"># 原始字节 CLUSTD
+      <span class="badge rows">${fmtB(total)}</span>
+      <span class="badge kind">${esc(d.container.algorithm||'RAW')}</span></div>
+    ${legend}<div class="hexdump">${h}</div>${more}</div>`;
+}
+function tableCards(d){
+  let h='';
   d.components.forEach((comp)=>{
     h+=`<div class="card"><div class="card-h">${kindIcon(comp.kind)}<span class="name">${esc(comp.name)}</span>
       <span class="badge kind">${esc(kindText(comp.kind))}</span>`;
     if(comp.kind!=='value')h+=`<span class="badge rows">${comp.rows.length} 行</span>`;
     if(comp.ddic)h+='<span class="badge ddic">✓ DDIC 类型化</span>';
+    else if(comp.kind!=='value')h+='<span class="badge unt">未类型化</span>';
     h+='</div><div class="card-b">';
-    if(comp.kind==='value'){h+=`<pre>${esc(comp.value_text)}</pre>`;h+='</div></div>';return;}
+    if(comp.kind==='value'){h+=`<pre>${esc(comp.value_text)}</pre></div></div>`;return;}
     if(comp.ddic){
       h+='<table><thead><tr>'+comp.columns.map(col=>`<th>${esc(col.name)}</th>`).join('')+'</tr></thead><tbody>';
       comp.typed_rows.slice(0,50).forEach(r=>{
@@ -291,7 +376,53 @@ function renderDetail(d){
     }
     h+='</div></div>';
   });
-  $('detail').innerHTML=h;
+  return h;
+}
+function renderDetail(){
+  const d=CUR_DETAIL;
+  if(!d||d.error){$('detail').innerHTML='<div class="empty">'+esc(d&&d.error||'无数据')+'</div>';return;}
+  const c=d.container;
+  const nRows=d.components.reduce((a,comp)=>a+(comp.rows?comp.rows.length:0),0);
+  const keys=d.keys?Object.entries(d.keys).slice(0,3)
+    .map(([k,v])=>`<span class="chip">${esc(k)}=<b>${esc(v)}</b></span>`).join(''):'';
+  const head=`<div class="detail-head">
+    <div class="head-row"><h2>${esc(d.label)} ${ringSvg(d.coverage_pct)}</h2>
+      <div class="seg"><button id="vTab" class="${VIEW==='table'?'on':''}">表格</button><button id="vHex" class="${VIEW==='hex'?'on':''}">Hex</button></div>
+      <button class="btn" id="copyBtn">⧉ 复制 JSON</button>
+      <button class="btn primary" id="dlBtn">↓ 导出</button>
+    </div>
+    ${keys?`<div class="keys">${keys}</div>`:''}
+    <div class="chips" style="margin-top:8px">
+      <span class="chip">容器 <b>v${c.version}</b></span>
+      <span class="chip">代码页 <b>${esc(c.codepage)}</b></span>
+      <span class="chip"><b>${c.compressed_bytes}</b> → <b>${c.uncompressed_bytes}</b> B</span>
+      <span class="chip">${esc(c.algorithm||'未压缩')}</span>
+      <span class="chip">组件 <b>${d.components.length}</b></span>
+      <span class="chip">行 <b>${nRows}</b></span>
+      ${d.parse_ms!=null?`<span class="chip">解析 <b>${d.parse_ms}</b> ms</span>`:''}
+    </div></div>`;
+  const body=VIEW==='hex'?hexCard(d):tableCards(d);
+  $('detail').innerHTML=head+body;
+  $('vTab').onclick=()=>{VIEW='table';renderDetail();};
+  $('vHex').onclick=()=>{VIEW='hex';renderDetail();};
+  $('copyBtn').onclick=async()=>{
+    try{
+      await navigator.clipboard.writeText(JSON.stringify(
+        {file:d.label,container:c,coverage_pct:d.coverage_pct,
+         components:d.components},null,2));
+      $('copyBtn').textContent='✓ 已复制';
+      setTimeout(()=>$('copyBtn').textContent='⧉ 复制 JSON',1200);
+    }catch(e){$('copyBtn').textContent='复制失败';}
+  };
+  $('dlBtn').onclick=()=>{
+    const blob=new Blob([JSON.stringify(
+      {cluster:d.keys||{file:CUR_FILE},container:c,coverage_pct:d.coverage_pct,
+       components:d.components},null,1)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=(CUR_FILE||d.label.replace(/\\//g,'_'))+'.json';
+    a.click();URL.revokeObjectURL(a.href);
+  };
   $('main').scrollTop=0;
 }
 $('tq').oninput=renderTables;
@@ -317,9 +448,12 @@ class _App:
 
     # ---- 表清单
     def tables(self):
+        """[{name, rows|None, bytes|None}];db 行数取 M_TABLES(查不到则缺省)。"""
         if self.offline_dir:
-            return sorted(f[:-4] for f in os.listdir(self.offline_dir)
-                          if f.endswith(".bin"))
+            return [dict(name=f[:-4], rows=None,
+                         bytes=os.path.getsize(os.path.join(self.offline_dir, f)))
+                    for f in sorted(os.listdir(self.offline_dir))
+                    if f.endswith(".bin")]
         conn = connect(self.args)
         cur = conn.cursor()
         cur.execute("""SELECT TABLE_NAME FROM TABLE_COLUMNS
@@ -327,9 +461,28 @@ class _App:
                        ('RELID','SRTF2','CLUSTR','CLUSTD')
                        GROUP BY TABLE_NAME HAVING COUNT(DISTINCT COLUMN_NAME)=4
                        ORDER BY TABLE_NAME""", (self.schema,))
-        tables = [r[0] for r in cur.fetchall()]
+        names = [r[0] for r in cur.fetchall()]
+        rows_map = {}
+        try:
+            cur.execute("""SELECT TABLE_NAME, RECORD_COUNT FROM M_TABLES
+                           WHERE SCHEMA_NAME=?""", (self.schema,))
+            rows_map = dict(cur.fetchall())
+        except Exception:
+            pass    # M_TABLES 权限缺失时退化为无行数
         conn.close()
-        return tables
+        return [dict(name=t, rows=rows_map.get(t)) for t in names]
+
+    # ---- RELID 分布(中栏过滤 chips)
+    def relids(self, table):
+        if self.offline_dir:
+            return []
+        conn = connect(self.args)
+        cur = conn.cursor()
+        cur.execute("""SELECT RELID, COUNT(*) FROM %s
+                       GROUP BY RELID ORDER BY 2 DESC LIMIT 12""" % qid(self.schema, table))
+        out = [dict(relid=r, n=n) for r, n in cur.fetchall()]
+        conn.close()
+        return out
 
     # ---- 键结构(带缓存)
     def keyinfo(self, table):
@@ -339,9 +492,9 @@ class _App:
             conn.close()
         return self._keyinfo[table]
 
-    def clusters(self, table, offset, limit, search=None):
+    def clusters(self, table, offset, limit, search=None, relid=None):
         if self.offline_dir:
-            files = self.tables()
+            files = [d["name"] for d in self.tables()]
             if search:
                 files = [f for f in files if search.lower() in f.lower()]
             items = [dict(label=f, file=f + ".bin", chunks=1,
@@ -350,7 +503,7 @@ class _App:
             return items[offset:offset + limit]
         conn = connect(self.args)
         ident = table_keyinfo(conn, self.schema, table)
-        ids = iter_cluster_ids(conn, self.schema, table, ident, None,
+        ids = iter_cluster_ids(conn, self.schema, table, ident, relid,
                                limit, offset=offset, search=search)
         conn.close()
         items = []
@@ -407,12 +560,15 @@ def _make_handler(app):
                 elif u.path == "/api/tables":
                     self._json(dict(mode="offline" if app.offline_dir else "db",
                                     tables=app.tables()))
+                elif u.path == "/api/relids":
+                    self._json(dict(relids=app.relids(qs["table"][0])))
                 elif u.path == "/api/clusters":
                     table = qs["table"][0]
                     offset = int(qs.get("offset", ["0"])[0])
                     limit = min(int(qs.get("limit", ["100"])[0]), 500)
                     search = qs.get("q", [None])[0]
-                    items = app.clusters(table, offset, limit, search)
+                    relid = qs.get("relid", [None])[0]
+                    items = app.clusters(table, offset, limit, search, relid)
                     self._json(dict(identity="key", items=items))
                 elif u.path == "/api/cluster":
                     if app.offline_dir:
@@ -423,6 +579,7 @@ def _make_handler(app):
                         table = qs["table"][0]
                         kv = {k: v[0] for k, v in qs.items() if k != "table"}
                         blob, preload = app.cluster_blob(table, kv)
+                    t0 = time.perf_counter()
                     info, out, comps, covered, named = parse_blob(blob)
                     if app.offline_dir:
                         if preload:
@@ -431,10 +588,13 @@ def _make_handler(app):
                         conn = connect(app.args)
                         enrich_components(comps, info, DDIC(conn))
                         conn.close()
+                    parse_ms = round((time.perf_counter() - t0) * 1000, 1)
                     label = " / ".join("%s" % v for k, v in kv.items()
                                        if k in ("RELID", "SRTFD")) or table
                     self._json(dict(
                         label=label, container=info, coverage_pct=covered,
+                        keys=kv if kv else None, parse_ms=parse_ms,
+                        raw_hex=blob.hex(), raw_len=len(blob),
                         components=[component_to_json(c, info["char_size"],
                                                       info["codepage"])
                                     for c in comps]))
