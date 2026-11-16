@@ -91,3 +91,20 @@ def test_row_width_is_self_consistent():
     for c in comps:
         if c["kind"] in ("struct", "table") and c["fields"][0][0] != "v6":
             assert len(c["rows"][0]) == sum(f[-1] for f in c["fields"])
+
+
+def test_untyped_grid_column_split():
+    """未类型化表组件:按描述符宽度切匿名网格;行宽不符时回退文本视图。"""
+    from sap_indx_decoder import parse_blob
+    from sap_indx_decoder.marker import component_to_json
+
+    info, _out, comps, _covered, _named = parse_blob(load("TN_QUEUE_ID.bin"))
+    comp = next(c for c in comps if c["kind"] == "table")
+    j = component_to_json(comp, info["char_size"], info["codepage"])
+    assert j["cols"] == [20, 3, 20, 1, 4, 73, 30, 1, 2]
+    assert j["grid"][0][:3] == ["SAPKB70202", "001", "EPILOGUE"]
+    assert all(len(r) == len(j["cols"]) for r in j["grid"])
+
+    bad = dict(comp, rows=[comp["rows"][0] + b"x"])
+    j2 = component_to_json(bad, info["char_size"], info["codepage"])
+    assert "grid" not in j2

@@ -5,8 +5,10 @@
   --offline-dir DIR  浏览本地 dump 的 .bin 文件(自动加载 .ddic.json 侧车)
 
 零框架依赖:stdlib http.server + 单页内联 HTML/CSS/JS。
-设计令牌采用语义化 CSS 变量,自动跟随系统明暗主题;覆盖率用 SVG 圆环
-展示;组件卡片带渐显动画。默认只绑定 127.0.0.1。
+设计令牌采用语义化 CSS 变量,自动跟随系统明暗主题。三栏布局:簇表(带
+M_TABLES 行数徽标)→ 簇清单(RELID 过滤 chips)→ 簇详情(覆盖率圆环、
+表格/Hex 双视图、类型化/匿名网格组件卡、复制 JSON / 导出)。
+默认只绑定 127.0.0.1。
 """
 import json
 import os

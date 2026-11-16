@@ -42,11 +42,15 @@ $ indx parse STXL -k MANDT=000 -k RELID=TX \
   semantics come from the descriptor stream itself (`0=C 1=D 3=T 6=N 8=I`,
   confirmed against DD03L); DDIC contributes column names and validation.
 * Local web preview: `serve` runs a zero-dependency UI (stdlib `http.server`)
-  for browsing tables → clusters → typed component tables with a hex toggle.
+  for browsing tables (row counts) → clusters (RELID filter chips) → cluster
+  details — coverage ring, typed/anonymous-grid component tables, a colored
+  hex view (24-byte container header highlighted), copy-JSON / export.
   `--offline-dir` points it at dumped `.bin` files — no database needed.
 * Fast: the LZH decompressor ships as a native Rust extension (PyO3, abi3)
   with a byte-for-byte differential-tested pure-Python fallback — 4.5 MB in
-  ~7 ms (≈680 MB/s, ~60× the pure-Python baseline).
+  ~7 ms (≈680 MB/s, ~60× the pure-Python baseline). Batch commands run
+  clusters through a thread pool (`--workers`, default 4) so remote-system
+  latency and decompression scale across cores.
 
 The full reverse-engineered container/LZH/marker-stream specification lives in
 [docs/FORMAT.md](docs/FORMAT.md).
@@ -129,7 +133,7 @@ every parse reports the share of stream bytes it could explain.
 sap_indx_decoder/
 ├── lzh.py         # LZH inflate: pure Python + native bridge (Rust, optional)
 ├── container.py   # 24-byte container header, code page, compression dispatch
-├── marker.py      # anchored marker-stream parser (v3–v6) + text views
+├── marker.py      # anchored marker-stream parser (v3–v6); text views + anonymous grids
 ├── ddic.py        # DD02L/DD03L lookup + INTTYPE-based typed decoding
 ├── db.py          # hdbcli access, cluster-key inference, fetch/iterate
 ├── export.py      # sqlite / parquet writers
