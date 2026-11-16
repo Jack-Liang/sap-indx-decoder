@@ -139,8 +139,9 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;
   text-transform:uppercase;color:var(--text-2)}
 .pane-title .cnt{color:var(--muted);font-size:12px;font-family:var(--mono)}
 .pane-body{flex:1;overflow:auto;padding:6px}
-input{width:100%;padding:7px 11px;border:1px solid var(--border);border-radius:8px;
-  background:var(--panel);color:var(--text);font-size:13px}
+input{width:100%;padding:7px 11px 7px 30px;border:1px solid var(--border);border-radius:8px;
+  background:var(--panel) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238b95a1' stroke-width='1.5' stroke-linecap='round'><circle cx='7' cy='7' r='4.5'/><path d='M10.8 10.8L14 14'/></svg>") 9px center no-repeat;
+  background-size:14px 14px;color:var(--text);font-size:13px}
 input::placeholder{color:var(--muted)}
 input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 /* ---- 列表项 ---- */
