@@ -245,6 +245,19 @@ def component_to_json(c, csize, cp):
         for r in c["rows"]:
             txt, bad = decode_row(r, csize, cp)
             d["rows"].append(dict(text=txt, bytes=len(r), non_printable=bad))
+        # 未类型化的匿名网格:按描述符宽度切列,列起点固定(宽度校验不过则不产出)
+        widths = [f[-1] for f in c["fields"]]
+        if widths and c["rows"] and all(len(r) == sum(widths) for r in c["rows"]):
+            grid = []
+            for r in c["rows"]:
+                vals, off = [], 0
+                for w in widths:
+                    chunk = r[off:off + w]
+                    off += w
+                    vals.append(decode_row(chunk, csize, cp)[0])
+                grid.append(vals)
+            d["cols"] = widths
+            d["grid"] = grid
     if c.get("typed"):
         d["ddic"] = True
         d["columns"] = c["columns"]

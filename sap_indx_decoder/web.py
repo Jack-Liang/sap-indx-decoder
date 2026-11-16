@@ -369,6 +369,12 @@ function tableCards(d){
         h+='<tr>'+comp.columns.map(col=>`<td>${esc(r[col.name])}</td>`).join('')+'</tr>';});
       h+='</tbody></table>';
       if(comp.typed_rows.length>50)h+=`<div class="empty">… 共 ${comp.typed_rows.length} 行(网页仅显示前 50 行,导出用 CLI)</div>`;
+    }else if(comp.grid){
+      h+='<table><thead><tr>'+comp.cols.map((w,i)=>`<th>F${i+1}</th>`).join('')+'</tr></thead><tbody>';
+      comp.grid.slice(0,50).forEach(r=>{
+        h+='<tr>'+r.map(v=>`<td>${esc(v)}</td>`).join('')+'</tr>';});
+      h+='</tbody></table>';
+      if(comp.grid.length>50)h+=`<div class="empty">… 共 ${comp.grid.length} 行(网页仅显示前 50 行,导出用 CLI)</div>`;
     }else{
       h+='<pre>';
       comp.rows.slice(0,100).forEach(r=>{h+=esc(r.text)+'\\n';});
