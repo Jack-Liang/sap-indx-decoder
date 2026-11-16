@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 — 2026-11-16
 
 ### Added
 - Web preview upgraded to the v0.4.2 design: table-list row counts (from

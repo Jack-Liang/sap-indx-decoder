@@ -228,7 +228,7 @@ pre{background:var(--panel-2);border-radius:8px;margin:8px 12px;padding:10px 12p
   </div>
 </div>
 <script>
-let MODE=null, TABLES=[], CUR_TABLE=null, CLUSTERS=[], CUR_KV=null, CUR_FILE=null;
+let MODE=null, SCHEMA='', TABLES=[], CUR_TABLE=null, CLUSTERS=[], CUR_KV=null, CUR_FILE=null;
 let RELIDS=[], CUR_RELID=null, VIEW='table', CUR_DETAIL=null;
 let clusterReqId=0;   // 防竞态: 只渲染最后一次簇列表请求
 const $=id=>document.getElementById(id);
@@ -252,9 +252,9 @@ function ringSvg(v){
 async function jget(url){const r=await fetch(url);const t=await r.text();
   try{return JSON.parse(t)}catch(e){throw new Error(t)}}
 async function init(){
-  const d=await jget('/api/tables'); MODE=d.mode; TABLES=d.tables;
+  const d=await jget('/api/tables'); MODE=d.mode; SCHEMA=d.schema||''; TABLES=d.tables;
   $('mode').innerHTML = MODE==='offline' ? '<b>离线模式</b>'
-    : '<span style="color:var(--green)">●</span> <b>连库模式</b> '+esc((TABLES[0]||{}).schema||'');
+    : '<span style="color:var(--green)">●</span> <b>连库模式</b> '+esc(SCHEMA);
   renderTables();
 }
 function renderTables(){
@@ -560,7 +560,7 @@ def _make_handler(app):
                     self.wfile.write(body)
                 elif u.path == "/api/tables":
                     self._json(dict(mode="offline" if app.offline_dir else "db",
-                                    tables=app.tables()))
+                                    schema=app.schema, tables=app.tables()))
                 elif u.path == "/api/relids":
                     self._json(dict(relids=app.relids(qs["table"][0])))
                 elif u.path == "/api/clusters":

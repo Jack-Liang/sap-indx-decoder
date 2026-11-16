@@ -11,7 +11,7 @@ from .container import decompress_container
 from .errors import ToolError
 from .marker import component_to_json, decode_row, parse_stream
 
-__version__ = "0.2.0"
+__version__ = "0.4.2"
 
 __all__ = ["__version__", "ToolError", "decompress_container", "parse_stream",
            "decode_row", "component_to_json", "parse_blob"]
