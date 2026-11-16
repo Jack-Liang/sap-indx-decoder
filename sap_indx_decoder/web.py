@@ -387,6 +387,16 @@ function tableCards(d){
   });
   return h;
 }
+function emptyComponentsCard(d){
+  const c=d.container;
+  return `<div class="card"><div class="card-h"># 无可解析组件</div><div class="card-b">
+    <div class="empty" style="text-align:left;padding:18px 22px;line-height:1.9">
+      解压成功(<b>${fmtB(c.uncompressed_bytes)}</b>)但标记流没有解析出任何组件——
+      覆盖率 <b>0%</b>。多为解析器未覆盖的簇变体(如 <code>nwbc_*</code> 一类),
+      解压数据本身完好:切换 <b>Hex</b> 查看原始字节,或用
+      <b>scan</b>/<b>export</b>(CLI)评估同类簇的解析率。
+    </div></div></div>`;
+}
 function renderDetail(){
   const d=CUR_DETAIL;
   if(!d||d.error){$('detail').innerHTML='<div class="empty">'+esc(d&&d.error||'无数据')+'</div>';return;}
@@ -410,7 +420,9 @@ function renderDetail(){
       <span class="chip">行 <b>${nRows}</b></span>
       ${d.parse_ms!=null?`<span class="chip">解析 <b>${d.parse_ms}</b> ms</span>`:''}
     </div></div>`;
-  const body=VIEW==='hex'?hexCard(d):tableCards(d);
+  const body = VIEW==='hex' ? hexCard(d)
+    : d.components.length===0 ? emptyComponentsCard(d)
+    : tableCards(d);
   $('detail').innerHTML=head+body;
   $('vTab').onclick=()=>{VIEW='table';renderDetail();};
   $('vHex').onclick=()=>{VIEW='hex';renderDetail();};
