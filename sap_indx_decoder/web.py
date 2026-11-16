@@ -328,7 +328,7 @@ async function pickCluster(i){
        qs='table='+encodeURIComponent(CUR_TABLE)+'&'+qs;}
   try{
     const d=await jget('/api/cluster?'+qs);
-    CUR_DETAIL=d; VIEW='table';
+    CUR_DETAIL=d;   // VIEW 保持用户上次的选择,不随换簇重置
     renderDetail();
   }catch(e){$('detail').innerHTML='<div class="empty">'+esc(e.message)+'</div>';}
 }
